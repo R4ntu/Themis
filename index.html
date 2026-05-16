@@ -418,45 +418,73 @@ const savePts=(d,v)=>ls.s('pts_'+d,v);
 const getActs=d=>ls.g('acts_'+d)||[];
 const saveActs=(d,v)=>ls.s('acts_'+d,v);
 
+// Fila local para reenvio em caso de falha
+function enqueue(sheet,row){
+  const q=JSON.parse(localStorage.getItem('tmss_queue')||'[]');
+  q.push({sheet,row,ts:Date.now()});
+  localStorage.setItem('tmss_queue',JSON.stringify(q.slice(-100)));
+}
+
+async function postToSheets(payload){
+  // Sem mode:'no-cors' — Apps Script com acesso "Qualquer pessoa" retorna CORS headers
+  const res=await fetch(CFG.SHEETS_URL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain'}, // text/plain evita preflight OPTIONS
+    body:JSON.stringify(payload),
+    redirect:'follow',
+  });
+  if(!res.ok) throw new Error('HTTP_'+res.status);
+  return res;
+}
+
 async function syncSheet(sheet,row){
   if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
   setSync('syncing');
-  // Enfileira para não perder dados em caso de falha
-  const payload=JSON.stringify({sheet,row});
   try{
-    const res=await fetch(CFG.SHEETS_URL,{
-      method:'POST',
-      mode:'no-cors', // opaque response - dados chegam mesmo sem ler resposta
-      headers:{'Content-Type':'text/plain'}, // text/plain não dispara preflight
-      body:payload,
-    });
+    await postToSheets({sheet,row});
     setSync('ok');
   }catch(e){
-    // Tenta salvar na fila local para reenvio
-    const q=JSON.parse(localStorage.getItem('tmss_queue')||'[]');
-    q.push({sheet,row,ts:Date.now()});
-    localStorage.setItem('tmss_queue',JSON.stringify(q.slice(-50)));
+    enqueue(sheet,row);
     setSync('err');
-    console.warn('[THEMIS] Sync falhou, salvo na fila local:',e.message);
+    const is403=e.message.includes('403')||e.message.toLowerCase().includes('forbidden');
+    if(is403) showSheetsError403();
+    else console.warn('[THEMIS] Sync falhou:',e.message);
   }
 }
 
-// Reenvio da fila local (chamado no init e a cada 2min)
+function showSheetsError403(){
+  const sbar=document.getElementById('sbar-txt');
+  if(sbar) sbar.innerHTML=
+    '🔴 Erro 403 no Sheets — No Apps Script: <strong>Implantar → Gerenciar implantações → Editar → "Qualquer pessoa" (sem Google account)</strong> → Salvar nova versão';
+  toast('Sheets: erro 403. Veja a barra inferior para instruções.','err');
+}
+
 async function flushQueue(){
   if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
   const q=JSON.parse(localStorage.getItem('tmss_queue')||'[]');
   if(!q.length)return;
-  const sent=[];
+  const ok=[];
   for(const item of q){
-    try{
-      await fetch(CFG.SHEETS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(item)});
-      sent.push(item);
-    }catch{}
+    try{ await postToSheets(item); ok.push(item); }catch{ break; }
   }
-  if(sent.length){
-    const remaining=q.filter(x=>!sent.includes(x));
-    localStorage.setItem('tmss_queue',JSON.stringify(remaining));
-    if(!remaining.length){setSync('ok');toast(`${sent.length} registro(s) reenviado(s) ao Sheets ✅`,'ok');}
+  if(ok.length){
+    const rem=q.filter(x=>!ok.includes(x));
+    localStorage.setItem('tmss_queue',JSON.stringify(rem));
+    if(!rem.length){setSync('ok');toast(`${ok.length} registro(s) reenviado(s) ao Sheets ✅`);}
+  }
+}
+
+async function checkSheetsHealth(){
+  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
+  try{
+    const res=await fetch(CFG.SHEETS_URL,{method:'GET'});
+    if(res.ok){ const d=await res.json(); if(d.ok) setSync('ok'); }
+    else if(res.status===403) showSheetsError403();
+  }catch(e){
+    // CORS error aqui também indica 403/acesso errado
+    if(e.message.includes('Failed to fetch')||e.message.includes('CORS')){
+      showSheetsError403();
+    }
   }
 }
 function setSync(st){
@@ -655,7 +683,10 @@ function renderMeeting(){
       <p>${fmtD(spike)} · ${pts.length} pontos · ${acts.length} ações · ${done} concluídas</p></div>
       <div class="flex fac gap8 np">
         <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ Exportar PDF</button>
-        ${cur?.status!=='finalized'?`<button class="btn btn-success" onclick="finalize()">✅ Finalizar Plano</button>`:`<span class="bdg bdg-g" style="font-size:12px;padding:5px 13px">✓ Plano Finalizado</span>`}
+        ${cur?.status!=='finalized'
+          ?`<button class="btn btn-success" onclick="finalize()">✅ Finalizar Plano</button>`
+          :`<button class="btn btn-secondary btn-sm" onclick="reopenSpike()" style="border-color:var(--am);color:var(--am)">🔓 Reabrir Spike</button>
+            <span class="bdg bdg-g" style="font-size:12px;padding:5px 13px">✓ Plano Finalizado</span>`}
       </div>
     </div>
     <div class="kgrid np">
@@ -753,13 +784,23 @@ async function delAct(id,pid){
   toast('Ação removida.','info');
 }
 async function finalize(){
-  if(!confirm('Finalizar o plano de ação deste Spike Day? Esta ação não poderá ser desfeita.'))return;
+  if(!confirm('Finalizar o plano de ação deste Spike Day? Você poderá reabri-lo depois se necessário.'))return;
   const spikes=getSpikes();
   const s=spikes.find(x=>x.date===S.user.spike);
   if(s){s.status='finalized';s.finalizedAt=new Date().toISOString()}
   saveSpikes(spikes);
   syncSheet('SpikesFinalizados',[fmtNow(),S.user.email,fmtD(S.user.spike),S.user.spike]);
   renderMeeting();toast('Plano finalizado com sucesso! ✅');
+}
+
+function reopenSpike(){
+  if(!confirm('Reabrir este Spike Day? O status voltará para "Aberto" e você poderá registrar novos pontos e ações.'))return;
+  const spikes=getSpikes();
+  const s=spikes.find(x=>x.date===S.user.spike);
+  if(s){s.status='open';delete s.finalizedAt;}
+  saveSpikes(spikes);
+  syncSheet('SpikesReabertos',[fmtNow(),S.user.email,fmtD(S.user.spike),S.user.spike]);
+  renderMeeting();toast('Spike Day reaberto! Você pode adicionar novos pontos e ações. 🔓');
 }
 
 function renderDash(){
@@ -864,6 +905,17 @@ function renderHistory(){
   if(S.histSel)renderHistDetail(S.histSel);
 }
 function selHist(d){S.histSel=d;renderHistory()}
+
+function reopenFromHistory(date){
+  if(!confirm('Reabrir este Spike Day? O status voltará para "Aberto".'))return;
+  const spikes=getSpikes();
+  const s=spikes.find(x=>x.date===date);
+  if(s){s.status='open';delete s.finalizedAt;}
+  saveSpikes(spikes);
+  syncSheet('SpikesReabertos',[fmtNow(),S.user.email,fmtD(date),date]);
+  toast('Spike Day reaberto! 🔓');
+  renderHistory();
+}
 function renderHistDetail(date){
   const spikes=getSpikes();
   const s=spikes.find(x=>x.date===date);
@@ -875,7 +927,10 @@ function renderHistDetail(date){
         <div><h2 style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:800">Spike Day ${fmtD(date)}</h2>
         <p class="text-muted" style="font-size:12px;margin-top:2px">${pts.length} pontos · ${acts.length} ações · ${done} concluídas${s?.status==='finalized'?` · Finalizado em ${new Date(s.finalizedAt).toLocaleDateString('pt-BR')}`:''}</p></div>
         <div class="flex gap8">
-          ${s?.status==='finalized'?bdg('✓ Finalizado','bdg-g'):bdg('⚡ Aberto','bdg-sh')}
+          ${s?.status==='finalized'
+            ?`<button class="btn btn-secondary btn-sm np" onclick="reopenFromHistory('${date}')" style="border-color:var(--am);color:var(--am);font-size:11px">🔓 Reabrir</button>
+              ${bdg('✓ Finalizado','bdg-g')}`
+            :bdg('⚡ Aberto','bdg-sh')}
           <button class="btn btn-secondary btn-sm np" onclick="window.print()">🖨️ PDF</button>
         </div>
       </div>
@@ -910,11 +965,12 @@ function renderHistDetail(date){
   document.getElementById('li-email').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('li-date').focus()});
   document.getElementById('li-date').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
   if(CFG.SHEETS_URL==='SUA_URL_AQUI'){
-    const sb=document.getElementById('sbar-txt');if(sb)sb.textContent='⚠️ Google Sheets não configurado — veja themis-setup.md';
+    const sb=document.getElementById('sbar-txt');
+    if(sb)sb.textContent='⚠️ Google Sheets não configurado — veja themis-setup.md';
   } else {
-    // Tenta reenviar registros da fila a cada 2 minutos
-    flushQueue();
-    setInterval(flushQueue, 120000);
+    // Verifica conexão com Sheets e tenta reenviar fila pendente
+    checkSheetsHealth().then(()=>flushQueue());
+    setInterval(flushQueue,120000);
   }
   setTimeout(()=>{
     document.getElementById('loading').style.display='none';
