@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>THEMIS – Shopee Fulfillment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800;900&family=DM+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg0:   #060D1B;
+  --bg1:   #0C1628;
+  --bg2:   #101E36;
+  --bg3:   #162540;
+  --or:    #FF5722;
+  --or2:   #FF7849;
+  --or-g:  rgba(255,87,34,.16);
+  --or-gg: rgba(255,87,34,.07);
+  --bl:    #4A90D9;
+  --bl-g:  rgba(74,144,217,.14);
+  --gn:    #2ECC71;
+  --gn-g:  rgba(46,204,113,.13);
+  --pu:    #9B6DFF;
+  --pu-g:  rgba(155,109,255,.13);
+  --am:    #F5A623;
+  --am-g:  rgba(245,166,35,.13);
+  --rd:    #FF5252;
+  --rd-g:  rgba(255,82,82,.12);
+  --txt:   #DDE8F5;
+  --txt2:  #6B87A8;
+  --txt3:  #3A5070;
+  --bdr:   rgba(255,255,255,.07);
+  --bdr2:  rgba(255,255,255,.13);
+  --nav:   60px;
+  --r:     7px;
+  --r-lg:  12px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg0);color:var(--txt);font-size:14px;line-height:1.55;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:radial-gradient(circle,rgba(255,255,255,.03) 1px,transparent 1px);
+  background-size:28px 28px}
+
+/* INPUTS */
+input[type=text],input[type=email],input[type=date],input[type=search],select,textarea{
+  font-family:inherit;font-size:14px;width:100%;padding:10px 13px;
+  border:1.5px solid var(--bdr2);border-radius:var(--r);
+  background:var(--bg3);color:var(--txt);outline:none;
+  transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--or);box-shadow:0 0 0 3px var(--or-g),0 0 12px var(--or-gg)}
+input::placeholder,textarea::placeholder{color:var(--txt3)}
+select option{background:var(--bg2);color:var(--txt)}
+textarea{resize:vertical;min-height:86px;line-height:1.6}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:var(--r);
+  font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;padding:9px 18px;
+  transition:all .18s;white-space:nowrap;letter-spacing:.2px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:linear-gradient(135deg,var(--or) 0%,#FF7849 100%);color:#fff;box-shadow:0 2px 12px rgba(255,87,34,.35)}
+.btn-primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 22px rgba(255,87,34,.5);filter:brightness(1.08)}
+.btn-secondary{background:transparent;color:var(--txt);border:1.5px solid var(--bdr2)}
+.btn-secondary:hover:not(:disabled){border-color:var(--or);color:var(--or);background:var(--or-gg)}
+.btn-success{background:linear-gradient(135deg,var(--gn),#27AE60);color:#fff;box-shadow:0 2px 12px rgba(46,204,113,.3)}
+.btn-success:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 5px 18px rgba(46,204,113,.4)}
+.btn-danger{background:var(--rd);color:#fff}
+.btn-danger:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--txt2);padding:7px 12px}
+.btn-ghost:hover{background:var(--bg2);color:var(--txt)}
+.btn-sm{font-size:12px;padding:6px 12px;border-radius:6px}
+.btn-xs{font-size:11px;padding:4px 9px;border-radius:5px}
+.btn-full{width:100%}
+.btn-icon{width:32px;height:32px;padding:0;border-radius:6px}
+
+/* LOADING */
+#loading{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:var(--bg0)}
+.l-logo{font-family:'Outfit',sans-serif;font-size:42px;font-weight:800;letter-spacing:-2px;
+  background:linear-gradient(135deg,var(--or),var(--am));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 24px rgba(255,87,34,.6))}
+.l-sub{font-size:12px;color:var(--txt2);letter-spacing:2px;font-weight:600}
+.spin{width:34px;height:34px;border:2.5px solid var(--bdr2);border-top-color:var(--or);border-radius:50%;
+  animation:spin .7s linear infinite;filter:drop-shadow(0 0 6px var(--or))}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* LOGIN */
+#page-login{min-height:100vh;display:none;position:relative;z-index:1}
+.ll-left{width:480px;flex-shrink:0;background:var(--bg1);border-right:1px solid var(--bdr);
+  display:flex;flex-direction:column;justify-content:center;padding:64px 56px;position:relative;overflow:clip}
+.ll-left::before{content:'';position:absolute;width:420px;height:420px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,87,34,.2) 0%,transparent 70%);top:-100px;left:-80px;pointer-events:none}
+.ll-left::after{content:'';position:absolute;width:300px;height:300px;border-radius:50%;
+  background:radial-gradient(circle,rgba(74,144,217,.12) 0%,transparent 70%);bottom:-60px;right:-60px;pointer-events:none}
+.ll-brand{position:relative;z-index:1}
+.ll-tag{display:inline-flex;align-items:center;gap:7px;background:var(--or-g);
+  border:1px solid rgba(255,87,34,.3);border-radius:30px;padding:5px 15px;
+  font-size:11px;font-weight:700;color:var(--or2);letter-spacing:.5px;margin-bottom:28px}
+.ll-appname{font-family:'Outfit',sans-serif;font-size:clamp(44px,9vw,64px);font-weight:800;letter-spacing:-3px;line-height:.95;
+  background:linear-gradient(135deg,var(--or) 0%,var(--am) 60%,#fff 120%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 30px rgba(255,87,34,.5));margin-bottom:10px;
+  white-space:nowrap;overflow:visible}
+.ll-tagline{font-size:13px;color:var(--txt2);font-weight:400;letter-spacing:.4px}
+.ll-steps{position:relative;z-index:1;margin-top:48px;display:flex;flex-direction:column;gap:20px}
+.ll-step{display:flex;align-items:flex-start;gap:13px}
+.ll-step-n{width:24px;height:24px;border-radius:50%;flex-shrink:0;margin-top:1px;
+  background:var(--or-g);border:1px solid rgba(255,87,34,.3);color:var(--or2);
+  font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.ll-step-txt{font-size:13px;color:var(--txt2)}
+.ll-step-txt b{display:block;color:var(--txt);font-weight:700;margin-bottom:1px;font-size:13px}
+.ll-right{flex:1;background:var(--bg0);display:flex;flex-direction:column;justify-content:center;padding:64px 56px;position:relative;z-index:1}
+.ll-right::before{content:'';position:absolute;bottom:0;right:0;width:280px;height:280px;
+  background:radial-gradient(circle,rgba(255,87,34,.07) 0%,transparent 70%);pointer-events:none}
+.ll-form-title{font-family:'Outfit',sans-serif;font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:6px;color:var(--txt)}
+.ll-form-sub{color:var(--txt2);font-size:14px;margin-bottom:30px}
+
+/* FIELDS */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field label{font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.7px}
+.field .req{color:var(--or)}
+.field-err{color:var(--or);font-size:12px;font-weight:600}
+
+/* NAVBAR */
+#navbar{position:fixed;top:0;left:0;right:0;height:var(--nav);z-index:200;
+  display:none;align-items:center;padding:0 22px;
+  background:rgba(6,13,27,.9);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--bdr);box-shadow:0 4px 30px rgba(0,0,0,.4)}
+#navbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 0%,var(--or) 30%,var(--am) 50%,var(--or) 70%,transparent 100%);opacity:.45}
+.nb{font-family:'Outfit',sans-serif;font-size:19px;font-weight:800;letter-spacing:-1px;
+  margin-right:28px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--or),var(--am));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 10px rgba(255,87,34,.5));display:flex;align-items:center;gap:8px}
+.nb span{background:var(--or-g);border:1px solid rgba(255,87,34,.25);border-radius:5px;
+  padding:1px 7px;font-size:11px;font-weight:700;letter-spacing:.5px;
+  color:var(--or2);-webkit-text-fill-color:var(--or2);filter:none}
+.nl{display:flex;align-items:center;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none}
+.nl::-webkit-scrollbar{display:none}
+.nl-btn{padding:6px 14px;border-radius:6px;color:var(--txt2);font-size:13px;font-weight:600;
+  cursor:pointer;border:none;background:transparent;font-family:inherit;white-space:nowrap;transition:all .18s}
+.nl-btn:hover{color:var(--txt);background:rgba(255,255,255,.06)}
+.nl-btn.on{color:var(--or2);background:var(--or-g);border:1px solid rgba(255,87,34,.2)}
+.nr{display:flex;align-items:center;gap:10px;margin-left:auto;padding-left:14px}
+.nr-spike{background:var(--or-g);color:var(--or2);font-size:11px;font-weight:700;
+  padding:4px 12px;border-radius:20px;border:1px solid rgba(255,87,34,.25);white-space:nowrap}
+.nr-av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--or),var(--am));
+  color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 12px rgba(255,87,34,.4)}
+.nr-out{color:var(--txt2);font-size:12px;font-weight:600;cursor:pointer;
+  padding:5px 11px;border-radius:6px;border:1px solid var(--bdr2);background:transparent;
+  font-family:inherit;transition:all .18s}
+.nr-out:hover{border-color:var(--or);color:var(--or);background:var(--or-gg)}
+.sync-led{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--txt3)}
+.sync-led.ok{background:var(--gn);box-shadow:0 0 6px var(--gn)}
+.sync-led.syncing{background:var(--or);animation:gp .9s ease infinite}
+.sync-led.err{background:var(--am);box-shadow:0 0 6px var(--am)}
+@keyframes gp{0%,100%{opacity:1;box-shadow:0 0 4px currentColor}50%{opacity:.3;box-shadow:none}}
+
+/* CONTENT */
+#app-content{margin-top:var(--nav);min-height:calc(100vh - var(--nav) - 34px);position:relative;z-index:1}
+.pg{display:none;padding:26px 30px;max-width:1320px;margin:0 auto;animation:fadeUp .22s ease}
+.pg.on{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* PAGE HEADER */
+.ph{margin-bottom:22px}
+.ph h1{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.5px;color:var(--txt)}
+.ph p{color:var(--txt2);font-size:13px;margin-top:4px}
+.ph-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:22px}
+
+/* CARDS */
+.card{background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:20px;box-shadow:0 4px 20px rgba(0,0,0,.25)}
+.card-orange{border-top:2px solid var(--or);box-shadow:0 4px 24px rgba(0,0,0,.3),0 0 30px rgba(255,87,34,.06)}
+
+/* KPI */
+.kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:24px}
+.kcard{background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:16px 20px;position:relative;overflow:hidden}
+.kcard::before{content:'';position:absolute;inset:0;border-radius:var(--r-lg);
+  background:linear-gradient(135deg,rgba(255,255,255,.025) 0%,transparent 60%);pointer-events:none}
+.kcard:nth-child(1){border-left:2px solid var(--or)}
+.kcard:nth-child(2){border-left:2px solid var(--bl)}
+.kcard:nth-child(3){border-left:2px solid var(--gn)}
+.kcard:nth-child(4){border-left:2px solid var(--pu)}
+.klbl{font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.7px;display:flex;align-items:center;gap:5px}
+.kval{font-family:'Outfit',sans-serif;font-size:32px;font-weight:800;line-height:1.15;margin-top:6px;letter-spacing:-1.5px}
+.ksub{font-size:11px;color:var(--txt2);margin-top:3px}
+.kv-sh{color:var(--or);text-shadow:0 0 24px rgba(255,87,34,.5)}
+.kv-g{color:var(--gn);text-shadow:0 0 24px rgba(46,204,113,.4)}
+.kv-b{color:var(--bl);text-shadow:0 0 24px rgba(74,144,217,.4)}
+.kv-p{color:var(--pu);text-shadow:0 0 24px rgba(155,109,255,.4)}
+
+/* BADGES */
+.bdg{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap}
+.bdg-sh{background:var(--or-g);color:var(--or2);border:1px solid rgba(255,87,34,.2)}
+.bdg-g{background:var(--gn-g);color:var(--gn);border:1px solid rgba(46,204,113,.2)}
+.bdg-b{background:var(--bl-g);color:var(--bl);border:1px solid rgba(74,144,217,.2)}
+.bdg-r{background:var(--rd-g);color:var(--rd);border:1px solid rgba(255,82,82,.2)}
+.bdg-a{background:var(--am-g);color:var(--am);border:1px solid rgba(245,166,35,.2)}
+.bdg-p{background:var(--pu-g);color:var(--pu);border:1px solid rgba(155,109,255,.2)}
+.bdg-gr{background:rgba(255,255,255,.06);color:var(--txt2);border:1px solid var(--bdr)}
+
+/* TABLES */
+.tw{overflow-x:auto;border-radius:var(--r);border:1px solid var(--bdr)}
+table{width:100%;border-collapse:collapse}
+th{background:var(--bg2);padding:9px 13px;font-size:10px;font-weight:700;color:var(--txt2);
+  text-align:left;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--bdr)}
+td{padding:9px 13px;font-size:13px;border-bottom:1px solid var(--bdr);vertical-align:middle;color:var(--txt)}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:rgba(255,255,255,.02)}
+
+/* POINT CARDS */
+.pt-card{background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r-lg);overflow:hidden;margin-bottom:10px;transition:border-color .18s}
+.pt-card:hover{border-color:var(--bdr2)}
+.pt-head{display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;transition:background .15s}
+.pt-head:hover{background:rgba(255,255,255,.03)}
+.pt-num{width:27px;height:27px;border-radius:6px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--or),var(--am));color:#fff;font-size:11px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(255,87,34,.4)}
+.pt-body{padding:0 16px 14px;border-top:1px solid var(--bdr)}
+.pt-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+
+/* QUICK ACTIONS */
+.qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(188px,1fr));gap:14px;margin-bottom:28px}
+.qa-card{background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:20px;
+  cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.qa-card::before{content:'';position:absolute;inset:0;border-radius:var(--r-lg);
+  background:linear-gradient(135deg,rgba(255,255,255,.025) 0%,transparent 60%);pointer-events:none}
+.qa-card:hover{border-color:var(--or);transform:translateY(-3px);box-shadow:0 8px 28px rgba(0,0,0,.3),0 0 20px var(--or-g)}
+.qa-icon{font-size:28px;margin-bottom:10px}
+.qa-title{font-size:13px;font-weight:700;color:var(--txt)}
+.qa-desc{font-size:12px;color:var(--txt2);margin-top:3px}
+
+/* SECTION TITLE */
+.stitle{font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.7px;
+  display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.stitle::after{content:'';flex:1;height:1px;background:var(--bdr)}
+
+/* CHARTS */
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+.ccrd{background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:18px}
+.ctitle{font-size:13px;font-weight:700;color:var(--txt);margin-bottom:14px}
+.cbox{position:relative;height:230px}
+
+/* HISTORY */
+.hlayout{display:grid;grid-template-columns:270px 1fr;gap:16px}
+.hside .card{padding:0;overflow:hidden}
+.hitem{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--bdr);transition:background .15s}
+.hitem:last-child{border-bottom:none}
+.hitem:hover{background:rgba(255,255,255,.03)}
+.hitem.on{background:var(--or-g);border-left:2px solid var(--or)}
+.hitem .hd{font-weight:700;font-size:13px;color:var(--txt)}
+.hitem .hm{font-size:11px;color:var(--txt2);margin-top:2px}
+
+/* INLINE EDIT */
+.ii{padding:5px 8px;border:1.5px solid var(--bdr2);border-radius:5px;font-family:inherit;font-size:12px;width:100%;background:var(--bg2);color:var(--txt);outline:none;transition:border-color .15s}
+.ii:focus{border-color:var(--or)}
+.is{padding:5px 8px;border:1.5px solid var(--bdr2);border-radius:5px;font-family:inherit;font-size:12px;background:var(--bg2);color:var(--txt);cursor:pointer;outline:none}
+.is:focus{border-color:var(--or)}
+.is option{background:var(--bg2)}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.s2{grid-column:span 2}.s3{grid-column:span 3}
+.flex{display:flex}.fac{align-items:center}.fjb{justify-content:space-between}
+.gap8{gap:8px}.gap12{gap:12px}.gap14{gap:14px}
+.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}.mb22{margin-bottom:22px}
+.text-muted{color:var(--txt2);font-size:13px}
+hr.dvdr{border:none;border-top:1px solid var(--bdr);margin:16px 0}
+
+/* TOAST */
+#toasts{position:fixed;bottom:46px;right:22px;z-index:8888;display:flex;flex-direction:column;gap:7px}
+.tst{display:flex;align-items:center;gap:9px;padding:11px 15px;border-radius:var(--r);
+  background:var(--bg2);border:1px solid var(--bdr2);box-shadow:0 8px 28px rgba(0,0,0,.4);
+  font-size:13px;font-weight:500;color:var(--txt);animation:slideUp .2s ease;max-width:300px;border-left:3px solid var(--or)}
+.tst.ok{border-left-color:var(--gn)}.tst.err{border-left-color:var(--rd)}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* STATUS BAR */
+#sbar{position:fixed;bottom:0;left:0;right:0;height:34px;z-index:50;
+  background:var(--bg1);border-top:1px solid var(--bdr);
+  display:flex;align-items:center;padding:0 20px;font-size:11px;color:var(--txt2);gap:8px}
+#sbar .sbar-r{margin-left:auto;display:flex;align-items:center;gap:10px;opacity:.6}
+body{padding-bottom:34px}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:56px 20px;color:var(--txt2)}
+.empty .ei{font-size:44px;display:block;margin-bottom:12px}
+.empty h3{font-size:15px;font-weight:700;color:var(--txt);margin-bottom:5px}
+
+/* PRINT */
+@media print{
+  .np{display:none!important}
+  #navbar,#sbar{display:none!important}
+  #app-content{margin-top:0!important}
+  .pg{padding:0!important}
+  body{background:#fff!important;color:#000!important}
+  .card,.kcard,.pt-card,.ccrd{background:#fff!important;border-color:#ddd!important;box-shadow:none!important}
+  .kval,.ph h1{color:#111!important;text-shadow:none!important}
+  td,th{color:#222!important;background:#fff!important}
+  @page{margin:1.5cm}
+}
+
+@media(max-width:768px){
+  .ll-left{display:none}
+  #page-login .ll-right{width:100%;padding:40px 24px}
+  .g2,.g3,.cgrid,.hlayout{grid-template-columns:1fr}
+  .s2,.s3{grid-column:span 1}
+  .pg{padding:16px}
+  .nl-btn:not(.on){display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="l-logo">⚖️ THEMIS</div>
+  <div class="l-sub">SHOPEE FULFILLMENT · LESSONS LEARNED</div>
+  <div class="spin"></div>
+</div>
+
+<div id="page-login">
+  <div class="ll-left">
+    <div class="ll-brand">
+      <div class="ll-tag">🛍️ Shopee Fulfillment</div>
+      <div class="ll-appname">⚖️<br>THEMIS</div>
+      <div class="ll-tagline">Plataforma de Lessons Learned · Spike Day</div>
+    </div>
+    <div class="ll-steps">
+      <div class="ll-step"><div class="ll-step-n">1</div><div class="ll-step-txt"><b>Registre os pontos</b>Identifique problemas, oportunidades e destaques por turno e área</div></div>
+      <div class="ll-step"><div class="ll-step-n">2</div><div class="ll-step-txt"><b>Conduza a reunião</b>Monte o plano de ação com responsáveis, prazos e prioridades</div></div>
+      <div class="ll-step"><div class="ll-step-n">3</div><div class="ll-step-txt"><b>Acompanhe e evolua</b>Dashboard com histórico completo no Google Sheets</div></div>
+    </div>
+  </div>
+  <div class="ll-right">
+    <h1 class="ll-form-title">Bem-vindo(a)!</h1>
+    <p class="ll-form-sub">Informe seus dados para acessar o Spike Day.</p>
+    <div class="field">
+      <label>E-mail <span class="req">*</span></label>
+      <input type="email" id="li-email" placeholder="seu@shopee.com"/>
+    </div>
+    <div class="field">
+      <label>Data do Spike Day <span class="req">*</span></label>
+      <input type="date" id="li-date"/>
+    </div>
+    <div id="li-err" class="field-err" style="display:none;margin-bottom:12px"></div>
+    <button class="btn btn-primary btn-full" onclick="doLogin()" style="padding:13px;font-size:14px;letter-spacing:.3px">⚡ Acessar Spike Day</button>
+    <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--bdr);font-size:11px;color:var(--txt3);text-align:center;line-height:1.9">
+      Dados sincronizados com Google Sheets ✓<br>Configurado por seu administrador
+    </div>
+  </div>
+</div>
+
+<div id="main-app" style="display:none">
+  <nav id="navbar">
+    <div class="nb">⚖️ <span>THEMIS</span></div>
+    <div class="nl">
+      <button class="nl-btn on" data-pg="home"      onclick="nav('home')">🏠 Início</button>
+      <button class="nl-btn"    data-pg="form"      onclick="nav('form')">📝 Registrar Ponto</button>
+      <button class="nl-btn"    data-pg="meeting"   onclick="nav('meeting')">📋 Lessons Learned</button>
+      <button class="nl-btn"    data-pg="dashboard" onclick="nav('dashboard')">📊 Dashboard</button>
+      <button class="nl-btn"    data-pg="history"   onclick="nav('history')">🕑 Histórico</button>
+    </div>
+    <div class="nr">
+      <div class="sync-led ok" id="sync-led"></div>
+      <div class="nr-spike" id="nr-spike">—</div>
+      <div class="nr-av" id="nr-av">U</div>
+      <button class="nr-out" onclick="doLogout()">Sair</button>
+    </div>
+  </nav>
+  <div id="app-content">
+    <div id="pg-home"      class="pg on"><div id="c-home"></div></div>
+    <div id="pg-form"      class="pg"><div id="c-form"></div></div>
+    <div id="pg-meeting"   class="pg"><div id="c-meeting"></div></div>
+    <div id="pg-dashboard" class="pg"><div id="c-dashboard"></div></div>
+    <div id="pg-history"   class="pg"><div id="c-history"></div></div>
+  </div>
+</div>
+
+<div id="sbar" class="np">
+  <div class="sync-led ok" style="width:7px;height:7px"></div>
+  <span id="sbar-txt">Dados salvos localmente</span>
+  <div class="sbar-r"><span>⚖️ THEMIS v2.0</span><span>·</span><span>Shopee Fulfillment</span></div>
+</div>
+<div id="toasts"></div>
+
+<script>
+Chart.defaults.color='#6B87A8';
+Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
+
+const CFG={SHEETS_URL:'https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec'};
+
+const TURNOS=['T1','T2','T3'];
+const AREAS=['Inbound','Inventário','Picking Leve','Checking Leve','Picking HS','Checking HS','HV','Outros'];
+const TIPOS=['Problema','Oportunidade','Destaque','Risco'];
+const IMPACTOS=['Alto','Médio','Baixo'];
+const PRIORS=['Crítica','Alta','Média','Baixa'];
+const ST_ACAO=['Aberto','Em andamento','Concluído','Cancelado'];
+const TIPO_CLS={Problema:'bdg-r',Oportunidade:'bdg-g',Destaque:'bdg-b',Risco:'bdg-a'};
+const IMP_CLS={Alto:'bdg-r',Médio:'bdg-a',Baixo:'bdg-g'};
+const PRIO_CLS={Crítica:'bdg-p',Alta:'bdg-r',Média:'bdg-a',Baixa:'bdg-g'};
+const STA_CLS={Aberto:'bdg-gr','Em andamento':'bdg-b',Concluído:'bdg-g',Cancelado:'bdg-gr'};
+const AREA_COLS=['#FF5722','#FA8C16','#F5A623','#2ECC71','#00D4D4','#4A90D9','#9B6DFF','#EC4899'];
+const TIPO_COLS=['#FF5252','#2ECC71','#4A90D9','#F5A623'];
+const STA_COLS=['#4A5568','#4A90D9','#2ECC71','#2D3748'];
+const PRIO_COLS=['#9B6DFF','#FF5252','#F5A623','#2ECC71'];
+
+const S={user:null,page:'home',charts:{},dashSpike:null,histSel:null};
+
+const ls={
+  g:k=>{try{return JSON.parse(localStorage.getItem('tmss_'+k))}catch{return null}},
+  s:(k,v)=>{try{localStorage.setItem('tmss_'+k,JSON.stringify(v))}catch{}}
+};
+const getSpikes=()=>ls.g('spikes')||[];
+const saveSpikes=v=>ls.s('spikes',v);
+const getPts=d=>ls.g('pts_'+d)||[];
+const savePts=(d,v)=>ls.s('pts_'+d,v);
+const getActs=d=>ls.g('acts_'+d)||[];
+const saveActs=(d,v)=>ls.s('acts_'+d,v);
+
+async function syncSheet(sheet,row){
+  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
+  setSync('syncing');
+  try{
+    await fetch(CFG.SHEETS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({sheet,row})});
+    setSync('ok');
+  }catch(e){setSync('err');console.warn('[THEMIS]',e)}
+}
+function setSync(st){
+  document.querySelectorAll('.sync-led').forEach(el=>el.className='sync-led '+st);
+  const t=document.getElementById('sbar-txt');
+  if(t)t.textContent=st==='syncing'?'Sincronizando com Google Sheets...':st==='ok'?'Sincronizado com Google Sheets ✓':'Salvo localmente (Sheets indisponível)';
+}
+
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const fmtD=d=>{try{return new Date(d+'T12:00').toLocaleDateString('pt-BR')}catch{return d||''}};
+const fmtNow=()=>new Date().toLocaleString('pt-BR');
+const pct=(n,d)=>d?Math.round(n/d*100)+'%':'—';
+const bdg=(t,c)=>`<span class="bdg ${c}">${t}</span>`;
+const opts=(arr,val='')=>arr.map(a=>`<option${a===val?' selected':''}>${a}</option>`).join('');
+
+function toast(msg,type='ok'){
+  const c=document.getElementById('toasts'),el=document.createElement('div');
+  el.className='tst '+type;
+  el.innerHTML=`<span>${{ok:'✅',err:'❌',info:'ℹ️'}[type]||'📢'}</span><span>${msg}</span>`;
+  c.appendChild(el);setTimeout(()=>el.remove(),3200);
+}
+
+function doLogin(){
+  const email=document.getElementById('li-email').value.trim().toLowerCase();
+  const date=document.getElementById('li-date').value;
+  const err=document.getElementById('li-err');
+  err.style.display='none';
+  if(!email||!date){err.textContent='Preencha todos os campos.';err.style.display='block';return}
+  if(!/\S+@\S+\.\S+/.test(email)){err.textContent='E-mail inválido.';err.style.display='block';return}
+  const spikes=getSpikes();
+  if(!spikes.find(s=>s.date===date)){spikes.push({date,status:'open',createdAt:new Date().toISOString()});saveSpikes(spikes)}
+  S.user={email,spike:date};
+  document.getElementById('nr-spike').textContent='⚡ '+fmtD(date);
+  document.getElementById('nr-av').textContent=email.charAt(0).toUpperCase();
+  document.getElementById('page-login').style.display='none';
+  document.getElementById('navbar').style.display='flex';
+  document.getElementById('main-app').style.display='block';
+  syncSheet('Acessos',[fmtNow(),email,fmtD(date),date]);
+  nav('home');
+}
+function doLogout(){
+  S.user=null;S.page='home';S.dashSpike=null;S.histSel=null;
+  document.getElementById('navbar').style.display='none';
+  document.getElementById('main-app').style.display='none';
+  document.getElementById('page-login').style.display='flex';
+  Object.values(S.charts).forEach(c=>{try{c.destroy()}catch{}});S.charts={};
+}
+
+function nav(page){
+  S.page=page;
+  document.querySelectorAll('.pg').forEach(el=>el.classList.remove('on'));
+  document.getElementById('pg-'+page).classList.add('on');
+  document.querySelectorAll('.nl-btn').forEach(el=>el.classList.toggle('on',el.dataset.pg===page));
+  renderPage(page);window.scrollTo(0,0);
+}
+function renderPage(p){
+  if(p==='home')renderHome();
+  if(p==='form')renderForm();
+  if(p==='meeting')renderMeeting();
+  if(p==='dashboard')renderDash();
+  if(p==='history')renderHistory();
+}
+
+function renderHome(){
+  const{email,spike}=S.user;
+  const pts=getPts(spike),acts=getActs(spike);
+  const done=acts.filter(a=>a.status==='Concluído').length;
+  const prog=acts.filter(a=>a.status==='Em andamento').length;
+  const last=[...pts].reverse().slice(0,4);
+  document.getElementById('c-home').innerHTML=`
+    <div class="ph"><h1>Olá, ${email.split('@')[0]} 👋</h1>
+    <p>Spike Day <strong style="color:var(--or2)">${fmtD(spike)}</strong> · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div>
+    <div class="kgrid">
+      <div class="kcard"><div class="klbl">📌 Pontos</div><div class="kval kv-sh">${pts.length}</div><div class="ksub">registrados</div></div>
+      <div class="kcard"><div class="klbl">🎯 Ações</div><div class="kval kv-b">${acts.length}</div><div class="ksub">no plano</div></div>
+      <div class="kcard"><div class="klbl">✅ Concluídas</div><div class="kval kv-g">${done}</div><div class="ksub">${pct(done,acts.length)}</div></div>
+      <div class="kcard"><div class="klbl">🔄 Em andamento</div><div class="kval kv-p">${prog}</div><div class="ksub">${pct(prog,acts.length)}</div></div>
+    </div>
+    <div class="stitle">Ações rápidas</div>
+    <div class="qa-grid">
+      <div class="qa-card" onclick="nav('form')"><div class="qa-icon">📝</div><div class="qa-title">Registrar Ponto</div><div class="qa-desc">Adicionar problema, oportunidade ou destaque</div></div>
+      <div class="qa-card" onclick="nav('meeting')"><div class="qa-icon">📋</div><div class="qa-title">Lessons Learned</div><div class="qa-desc">Conduzir reunião e montar plano de ação</div></div>
+      <div class="qa-card" onclick="nav('dashboard')"><div class="qa-icon">📊</div><div class="qa-title">Dashboard</div><div class="qa-desc">Gráficos e indicadores do spike day</div></div>
+      <div class="qa-card" onclick="nav('history')"><div class="qa-icon">🕑</div><div class="qa-title">Histórico</div><div class="qa-desc">Consultar spike days anteriores</div></div>
+    </div>
+    ${last.length>0?`
+      <div class="stitle">Últimos pontos registrados</div>
+      ${last.map((p,i)=>`<div class="pt-card"><div class="pt-head" style="cursor:default">
+        <div class="pt-num">${pts.length-i}</div>
+        <div style="flex:1"><div style="font-weight:700;font-size:13px">${p.oque}</div>
+        <div class="pt-tags">${bdg(p.area,'bdg-gr')}${bdg(p.turno,'bdg-gr')}${bdg(p.tipo,TIPO_CLS[p.tipo]||'bdg-gr')}${bdg(p.impacto,IMP_CLS[p.impacto]||'bdg-gr')}</div></div>
+      </div></div>`).join('')}
+      <div style="text-align:center;margin-top:10px"><button class="btn btn-secondary btn-sm" onclick="nav('meeting')">Ver plano de ação completo →</button></div>
+    `:`<div class="card empty"><span class="ei">📋</span><h3>Nenhum ponto registrado ainda</h3>
+      <p class="text-muted">Comece registrando os pontos do Spike Day de hoje.</p>
+      <div style="margin-top:14px"><button class="btn btn-primary" onclick="nav('form')">📝 Registrar primeiro ponto</button></div></div>`}
+  `;
+}
+
+function renderForm(){
+  const pts=getPts(S.user.spike);
+  document.getElementById('c-form').innerHTML=`
+    <div class="ph-row"><div class="ph" style="margin:0"><h1>📝 Registrar Ponto</h1><p>Spike Day ${fmtD(S.user.spike)}</p></div></div>
+    <div class="card card-orange" style="max-width:820px;margin-bottom:24px">
+      <div class="g2">
+        <div class="field s2"><label>O quê aconteceu? <span class="req">*</span></label>
+          <input type="text" id="f-oque" placeholder="Descreva brevemente o ponto..." oninput="prevForm()"/></div>
+        <div class="field"><label>Turno <span class="req">*</span></label>
+          <select id="f-turno" onchange="prevForm()"><option value="">Selecione...</option>${opts(TURNOS)}</select></div>
+        <div class="field"><label>Área <span class="req">*</span></label>
+          <select id="f-area" onchange="prevForm()"><option value="">Selecione...</option>${opts(AREAS)}</select></div>
+        <div class="field"><label>Tipo <span class="req">*</span></label>
+          <select id="f-tipo" onchange="prevForm()"><option value="">Selecione...</option>${opts(TIPOS)}</select></div>
+        <div class="field"><label>Impacto <span class="req">*</span></label>
+          <select id="f-impacto" onchange="prevForm()"><option value="">Selecione...</option>${opts(IMPACTOS)}</select></div>
+        <div class="field s2"><label>Descrição detalhada</label>
+          <textarea id="f-desc" placeholder="Contexto, dados, o que aconteceu em detalhes..."></textarea></div>
+        <div class="field s2"><label>Observações adicionais</label>
+          <textarea id="f-obs" placeholder="Sugestões, referências..." style="min-height:68px"></textarea></div>
+      </div>
+      <div id="f-prev" style="display:none;margin-top:4px;padding:12px 14px;border-radius:var(--r);background:var(--or-g);border:1px solid rgba(255,87,34,.25)">
+        <div style="font-size:10px;font-weight:700;color:var(--or2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">Pré-visualização</div>
+        <div style="font-weight:700;font-size:13px;color:var(--txt)" id="p-oque"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="p-tags"></div>
+      </div>
+      <hr class="dvdr">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="clearFrm()">Limpar</button>
+        <button class="btn btn-primary" onclick="savePoint()">💾 Salvar Ponto</button>
+      </div>
+    </div>
+    <div style="max-width:820px"><div class="stitle">Pontos deste Spike Day (${pts.length})</div><div id="c-fpts"></div></div>
+  `;
+  renderFPts();
+}
+
+function prevForm(){
+  const oque=document.getElementById('f-oque').value.trim();
+  const turno=document.getElementById('f-turno').value;
+  const area=document.getElementById('f-area').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const imp=document.getElementById('f-impacto').value;
+  const pv=document.getElementById('f-prev');
+  if(!oque&&!turno&&!area){pv.style.display='none';return}
+  pv.style.display='block';
+  document.getElementById('p-oque').textContent=oque||'—';
+  document.getElementById('p-tags').innerHTML=(area?bdg(area,'bdg-gr'):'')+(turno?bdg(turno,'bdg-gr'):'')+(tipo?bdg(tipo,TIPO_CLS[tipo]||'bdg-gr'):'')+(imp?bdg(imp,IMP_CLS[imp]||'bdg-gr'):'');
+}
+function clearFrm(){
+  ['f-oque','f-turno','f-area','f-tipo','f-impacto','f-desc','f-obs'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('f-prev').style.display='none';
+}
+function renderFPts(){
+  const pts=getPts(S.user.spike);
+  const el=document.getElementById('c-fpts');if(!el)return;
+  if(!pts.length){el.innerHTML=`<div class="card empty" style="padding:32px"><span class="ei" style="font-size:32px">📭</span><p>Nenhum ponto registrado</p></div>`;return}
+  el.innerHTML=pts.map((p,i)=>`<div class="pt-card"><div class="pt-head" style="cursor:default">
+    <div class="pt-num">${i+1}</div>
+    <div style="flex:1"><div style="font-weight:700;font-size:13px">${p.oque}</div>
+    <div class="pt-tags">${bdg(p.area,'bdg-gr')}${bdg(p.turno,'bdg-gr')}${bdg(p.tipo,TIPO_CLS[p.tipo]||'bdg-gr')}${bdg(p.impacto,IMP_CLS[p.impacto]||'bdg-gr')}</div></div>
+    <button class="btn btn-danger btn-xs np" onclick="delPt('${p.id}')">🗑️ Remover</button>
+  </div>${p.descricao?`<div style="padding:0 15px 12px;font-size:12px;color:var(--txt2)">${p.descricao}</div>`:''}</div>`).join('');
+}
+async function savePoint(){
+  const oque=document.getElementById('f-oque').value.trim();
+  const turno=document.getElementById('f-turno').value;
+  const area=document.getElementById('f-area').value;
+  const tipo=document.getElementById('f-tipo').value;
+  const impacto=document.getElementById('f-impacto').value;
+  if(!oque||!turno||!area||!tipo||!impacto){toast('Preencha todos os campos obrigatórios.','err');return}
+  const pt={id:uid(),oque,turno,area,tipo,impacto,
+    descricao:document.getElementById('f-desc').value.trim(),
+    observacoes:document.getElementById('f-obs').value.trim(),
+    createdAt:new Date().toISOString(),email:S.user.email};
+  const pts=getPts(S.user.spike);pts.push(pt);savePts(S.user.spike,pts);
+  syncSheet('Pontos',[fmtNow(),S.user.email,fmtD(S.user.spike),pt.id,pt.oque,pt.turno,pt.area,pt.tipo,pt.impacto,pt.descricao,pt.observacoes]);
+  clearFrm();renderFPts();toast('Ponto registrado! ✅');
+}
+function delPt(id){
+  if(!confirm('Remover este ponto? As ações associadas também serão removidas.'))return;
+  const d=S.user.spike;
+  savePts(d,getPts(d).filter(p=>p.id!==id));
+  saveActs(d,getActs(d).filter(a=>a.pointId!==id));
+  renderFPts();toast('Ponto removido.','info');
+}
+
+function renderMeeting(){
+  const{spike}=S.user;
+  const pts=getPts(spike),acts=getActs(spike);
+  const done=acts.filter(a=>a.status==='Concluído').length;
+  const spikes=getSpikes();
+  const cur=spikes.find(s=>s.date===spike);
+  document.getElementById('c-meeting').innerHTML=`
+    <div class="ph-row">
+      <div class="ph" style="margin:0"><h1>📋 Lessons Learned</h1>
+      <p>${fmtD(spike)} · ${pts.length} pontos · ${acts.length} ações · ${done} concluídas</p></div>
+      <div class="flex fac gap8 np">
+        <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ Exportar PDF</button>
+        ${cur?.status!=='finalized'?`<button class="btn btn-success" onclick="finalize()">✅ Finalizar Plano</button>`:`<span class="bdg bdg-g" style="font-size:12px;padding:5px 13px">✓ Plano Finalizado</span>`}
+      </div>
+    </div>
+    <div class="kgrid np">
+      <div class="kcard"><div class="klbl">📌 Pontos</div><div class="kval kv-sh">${pts.length}</div></div>
+      <div class="kcard"><div class="klbl">🎯 Ações</div><div class="kval kv-b">${acts.length}</div></div>
+      <div class="kcard"><div class="klbl">✅ Concluídas</div><div class="kval kv-g">${done}</div><div class="ksub">${pct(done,acts.length)}</div></div>
+      <div class="kcard"><div class="klbl">🔄 Em andamento</div><div class="kval kv-p">${acts.filter(a=>a.status==='Em andamento').length}</div></div>
+    </div>
+    ${pts.length===0?`<div class="card empty"><span class="ei">📭</span><h3>Nenhum ponto registrado</h3><p>Vá para "Registrar Ponto" para começar.</p>
+      <div style="margin-top:14px"><button class="btn btn-primary" onclick="nav('form')">📝 Registrar Ponto</button></div></div>`
+    :pts.map((pt,i)=>mtgCard(pt,i,acts)).join('')}
+  `;
+}
+function mtgCard(pt,i,allActs){
+  const pa=allActs.filter(a=>a.pointId===pt.id);
+  return `<div class="pt-card" id="pc-${pt.id}">
+    <div class="pt-head" onclick="toggleBody('pb-${pt.id}')">
+      <div class="pt-num">${i+1}</div>
+      <div style="flex:1"><div style="font-weight:700;font-size:13px">${pt.oque}</div>
+      <div class="pt-tags">${bdg(pt.area,'bdg-gr')}${bdg(pt.turno,'bdg-gr')}${bdg(pt.tipo,TIPO_CLS[pt.tipo]||'bdg-gr')}${bdg(pt.impacto,IMP_CLS[pt.impacto]||'bdg-gr')}${pa.length?bdg(pa.length+' ação'+(pa.length>1?'s':''),'bdg-b'):''}</div></div>
+      <span style="color:var(--txt2);font-size:16px;padding:0 6px">▾</span>
+    </div>
+    <div id="pb-${pt.id}" class="pt-body" style="padding-top:13px">
+      ${pt.descricao?`<p style="font-size:12px;color:var(--txt2);margin-bottom:12px">${pt.descricao}</p>`:''}
+      ${pa.length?`<div class="tw" style="margin-bottom:11px"><table>
+        <thead><tr><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Prioridade</th><th>Status</th><th class="np"></th></tr></thead>
+        <tbody id="at-${pt.id}">${pa.map(a=>actRow(a,pt.id)).join('')}</tbody>
+      </table></div>`:`<p style="font-size:12px;color:var(--txt2);text-align:center;padding:10px 0 12px">Sem ações para este ponto</p>`}
+      <div class="np" style="background:var(--bg2);border-radius:var(--r);padding:14px;border:1px solid var(--bdr)" id="af-${pt.id}">
+        <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">+ Nova Ação</div>
+        <div class="g2">
+          <div class="field s2"><label>Ação <span class="req">*</span></label><input type="text" id="na-ac-${pt.id}" placeholder="Descreva a ação..."/></div>
+          <div class="field"><label>Responsável <span class="req">*</span></label><input type="text" id="na-rp-${pt.id}" placeholder="Nome"/></div>
+          <div class="field"><label>Prazo</label><input type="date" id="na-pr-${pt.id}"/></div>
+          <div class="field"><label>Prioridade <span class="req">*</span></label><select id="na-po-${pt.id}"><option value="">Selecione...</option>${opts(PRIORS)}</select></div>
+          <div class="field"><label>Status</label><select id="na-st-${pt.id}"><option>Aberto</option>${ST_ACAO.slice(1).map(s=>`<option>${s}</option>`).join('')}</select></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-primary btn-sm" onclick="addAct('${pt.id}')">+ Adicionar Ação</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function actRow(a,pid){
+  return `<tr id="ar-${a.id}">
+    <td><input class="ii" value="${a.acao}" onchange="updAct('${a.id}','acao',this.value,'${pid}')" style="min-width:180px"/></td>
+    <td><input class="ii" value="${a.responsavel}" onchange="updAct('${a.id}','responsavel',this.value,'${pid}')" style="width:120px"/></td>
+    <td><input type="date" class="ii" value="${a.prazo||''}" onchange="updAct('${a.id}','prazo',this.value,'${pid}')" style="width:136px"/></td>
+    <td><select class="is" onchange="updAct('${a.id}','prioridade',this.value,'${pid}')">${PRIORS.map(p=>`<option${p===a.prioridade?' selected':''}>${p}</option>`).join('')}</select></td>
+    <td><select class="is" onchange="updAct('${a.id}','status',this.value,'${pid}')">${ST_ACAO.map(s=>`<option${s===a.status?' selected':''}>${s}</option>`).join('')}</select></td>
+    <td class="np"><button class="btn btn-danger btn-icon btn-xs" onclick="delAct('${a.id}','${pid}')">✕</button></td>
+  </tr>`;
+}
+function toggleBody(id){const el=document.getElementById(id);if(!el)return;el.style.display=el.style.display==='none'?'block':'none'}
+async function addAct(pid){
+  const ac=document.getElementById(`na-ac-${pid}`).value.trim();
+  const rp=document.getElementById(`na-rp-${pid}`).value.trim();
+  const po=document.getElementById(`na-po-${pid}`).value;
+  if(!ac||!rp||!po){toast('Preencha ação, responsável e prioridade.','err');return}
+  const act={id:uid(),pointId:pid,acao:ac,responsavel:rp,
+    prazo:document.getElementById(`na-pr-${pid}`).value,
+    prioridade:po,status:document.getElementById(`na-st-${pid}`).value||'Aberto',
+    createdAt:new Date().toISOString(),email:S.user.email};
+  const acts=getActs(S.user.spike);acts.push(act);saveActs(S.user.spike,acts);
+  syncSheet('Acoes',[fmtNow(),S.user.email,fmtD(S.user.spike),act.id,pid,act.acao,act.responsavel,act.prazo,act.prioridade,act.status]);
+  renderMeeting();
+  const bd=document.getElementById(`pb-${pid}`);if(bd)bd.style.display='block';
+  toast('Ação adicionada! ✅');
+}
+async function updAct(id,field,val,pid){
+  const acts=getActs(S.user.spike);
+  const a=acts.find(x=>x.id===id);if(!a)return;
+  a[field]=val;saveActs(S.user.spike,acts);
+  syncSheet('AcoesUpdate',[fmtNow(),S.user.email,fmtD(S.user.spike),id,field,val]);
+  setSync('ok');
+}
+async function delAct(id,pid){
+  if(!confirm('Remover esta ação?'))return;
+  const d=S.user.spike;
+  saveActs(d,getActs(d).filter(a=>a.id!==id));
+  renderMeeting();
+  const bd=document.getElementById(`pb-${pid}`);if(bd)bd.style.display='block';
+  toast('Ação removida.','info');
+}
+async function finalize(){
+  if(!confirm('Finalizar o plano de ação deste Spike Day? Esta ação não poderá ser desfeita.'))return;
+  const spikes=getSpikes();
+  const s=spikes.find(x=>x.date===S.user.spike);
+  if(s){s.status='finalized';s.finalizedAt=new Date().toISOString()}
+  saveSpikes(spikes);
+  syncSheet('SpikesFinalizados',[fmtNow(),S.user.email,fmtD(S.user.spike),S.user.spike]);
+  renderMeeting();toast('Plano finalizado com sucesso! ✅');
+}
+
+function renderDash(){
+  const spikes=getSpikes();
+  if(!S.dashSpike)S.dashSpike=S.user.spike;
+  const sel=S.dashSpike;
+  document.getElementById('c-dashboard').innerHTML=`
+    <div class="ph-row">
+      <div class="ph" style="margin:0"><h1>📊 Dashboard</h1><p>Indicadores e gráficos do Spike Day</p></div>
+      <div class="np flex fac gap8">
+        <label style="font-size:13px;font-weight:600;color:var(--txt2)">Spike Day:</label>
+        <select onchange="S.dashSpike=this.value;renderDash()" style="width:175px">
+          ${spikes.map(s=>`<option value="${s.date}"${s.date===sel?' selected':''}>${fmtD(s.date)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div id="dash-inner"></div>
+  `;
+  const pts=getPts(sel),acts=getActs(sel);
+  if(!pts.length){document.getElementById('dash-inner').innerHTML=`<div class="card empty"><span class="ei">📊</span><h3>Sem dados</h3><p>Registre pontos para visualizar os gráficos.</p></div>`;return}
+  const done=acts.filter(a=>a.status==='Concluído').length;
+  const crit=acts.filter(a=>a.prioridade==='Crítica').length;
+  document.getElementById('dash-inner').innerHTML=`
+    <div class="kgrid">
+      <div class="kcard"><div class="klbl">📌 Pontos</div><div class="kval kv-sh">${pts.length}</div></div>
+      <div class="kcard"><div class="klbl">🎯 Ações</div><div class="kval kv-b">${acts.length}</div></div>
+      <div class="kcard"><div class="klbl">✅ Taxa de conclusão</div><div class="kval kv-g">${pct(done,acts.length)}</div></div>
+      <div class="kcard"><div class="klbl">🚨 Ações críticas</div><div class="kval kv-p">${crit}</div></div>
+    </div>
+    <div class="cgrid">
+      <div class="ccrd"><div class="ctitle">Pontos por Área</div><div class="cbox"><canvas id="ch-area"></canvas></div></div>
+      <div class="ccrd"><div class="ctitle">Pontos por Turno</div><div class="cbox"><canvas id="ch-turno"></canvas></div></div>
+      <div class="ccrd"><div class="ctitle">Pontos por Tipo</div><div class="cbox"><canvas id="ch-tipo"></canvas></div></div>
+      <div class="ccrd"><div class="ctitle">Ações por Status</div><div class="cbox"><canvas id="ch-status"></canvas></div></div>
+    </div>
+    <div class="ccrd" style="margin-bottom:20px">
+      <div class="ctitle">Ações por Prioridade</div>
+      <div class="cbox" style="height:170px"><canvas id="ch-prio"></canvas></div>
+    </div>
+    <div class="ccrd" style="margin-bottom:20px">
+      <div class="ctitle">Pontos inseridos por usuário</div>
+      <div class="cbox" style="height:200px"><canvas id="ch-user"></canvas></div>
+    </div>
+    ${spikes.length>1?`<div class="stitle">Comparativo de Spike Days</div>
+      <div class="tw"><table><thead><tr><th>Spike Day</th><th>Pontos</th><th>Ações</th><th>Concluídas</th><th>Taxa</th><th>Status</th></tr></thead>
+      <tbody>${[...spikes].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{
+        const sp=getPts(s.date),sa=getActs(s.date),sd=sa.filter(a=>a.status==='Concluído').length;
+        return `<tr><td><strong>${fmtD(s.date)}</strong></td><td>${sp.length}</td><td>${sa.length}</td><td>${sd}</td><td>${pct(sd,sa.length)}</td>
+          <td>${s.status==='finalized'?bdg('✓ Finalizado','bdg-g'):bdg('Aberto','bdg-sh')}</td></tr>`;
+      }).join('')}</tbody></table></div>`:''}
+  `;
+  ['area','turno','tipo','status','prio','user'].forEach(k=>{if(S.charts[k]){S.charts[k].destroy();delete S.charts[k]}});
+  const gc='rgba(255,255,255,.05)';
+  const bOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0,color:'#6B87A8'},grid:{color:gc},border:{color:'transparent'}},
+            x:{grid:{display:false},ticks:{color:'#6B87A8'},border:{color:'transparent'}}}};
+  const pOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:11},color:'#6B87A8',padding:12}}}};
+  const br={borderRadius:6,borderSkipped:false};
+  const dc='#0C1628';
+  S.charts.area =new Chart(document.getElementById('ch-area'), {type:'bar',data:{labels:AREAS.map(a=>a.length>10?a.slice(0,10)+'…':a),datasets:[{...br,data:AREAS.map(a=>pts.filter(p=>p.area===a).length),backgroundColor:AREA_COLS}]},options:bOpts});
+  S.charts.turno=new Chart(document.getElementById('ch-turno'),{type:'bar',data:{labels:TURNOS,datasets:[{...br,data:TURNOS.map(t=>pts.filter(p=>p.turno===t).length),backgroundColor:['#FF5722','#4A90D9','#2ECC71']}]},options:bOpts});
+  S.charts.tipo =new Chart(document.getElementById('ch-tipo'), {type:'doughnut',data:{labels:TIPOS,datasets:[{data:TIPOS.map(t=>pts.filter(p=>p.tipo===t).length),backgroundColor:TIPO_COLS,borderWidth:3,borderColor:[dc,dc,dc,dc]}]},options:pOpts});
+  S.charts.status=new Chart(document.getElementById('ch-status'),{type:'doughnut',data:{labels:ST_ACAO,datasets:[{data:ST_ACAO.map(s=>acts.filter(a=>a.status===s).length),backgroundColor:STA_COLS,borderWidth:3,borderColor:[dc,dc,dc,dc]}]},options:pOpts});
+  S.charts.prio =new Chart(document.getElementById('ch-prio'), {type:'bar',data:{labels:PRIORS,datasets:[{...br,data:PRIORS.map(p=>acts.filter(a=>a.prioridade===p).length),backgroundColor:PRIO_COLS}]},options:{...bOpts,indexAxis:'y',scales:{x:{beginAtZero:true,ticks:{stepSize:1,precision:0,color:'#6B87A8'},grid:{color:gc},border:{color:'transparent'}},y:{grid:{display:false},ticks:{color:'#6B87A8'},border:{color:'transparent'}}}}});
+
+  // Pontos por usuário
+  const userMap={};
+  pts.forEach(p=>{const k=p.email||'Desconhecido';userMap[k]=(userMap[k]||0)+1});
+  const userLabels=Object.keys(userMap).map(e=>e.split('@')[0]);
+  const userVals=Object.values(userMap);
+  const userColors=['#FF5722','#4A90D9','#2ECC71','#9B6DFF','#F5A623','#EC4899','#00D4D4','#FF5252'];
+  S.charts.user=new Chart(document.getElementById('ch-user'),{
+    type:'bar',
+    data:{labels:userLabels,datasets:[{...br,data:userVals,backgroundColor:userColors.slice(0,userVals.length)}]},
+    options:{...bOpts,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+c.parsed.y+' ponto'+(c.parsed.y!==1?'s':'')}}},
+      scales:{y:{beginAtZero:true,ticks:{stepSize:1,precision:0,color:'#6B87A8'},grid:{color:gc},border:{color:'transparent'}},
+              x:{grid:{display:false},ticks:{color:'#6B87A8',maxRotation:30},border:{color:'transparent'}}}
+    }
+  });
+}
+
+function renderHistory(){
+  const spikes=getSpikes();
+  document.getElementById('c-history').innerHTML=`
+    <div class="ph"><h1>🕑 Histórico de Spike Days</h1><p>${spikes.length} spike day${spikes.length!==1?'s':''} registrado${spikes.length!==1?'s':''}</p></div>
+    <div class="hlayout">
+      <div class="hside"><div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:10px 15px;border-bottom:1px solid var(--bdr);font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.6px">Spike Days (${spikes.length})</div>
+        ${spikes.length===0?`<div style="padding:28px;text-align:center;color:var(--txt2);font-size:13px">Nenhum spike registrado</div>`
+          :[...spikes].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{
+            const sp=getPts(s.date),sa=getActs(s.date);
+            return `<div class="hitem${S.histSel===s.date?' on':''}" onclick="selHist('${s.date}')">
+              <div><div class="hd">⚡ ${fmtD(s.date)}</div><div class="hm">${sp.length} pontos · ${sa.length} ações</div></div>
+              ${s.status==='finalized'?bdg('✓','bdg-g'):bdg('Aberto','bdg-sh')}
+            </div>`;
+          }).join('')}
+      </div></div>
+      <div id="h-detail"><div class="card empty"><span class="ei" style="font-size:36px">👈</span><p>Selecione um Spike Day para ver os detalhes</p></div></div>
+    </div>
+  `;
+  if(S.histSel)renderHistDetail(S.histSel);
+}
+function selHist(d){S.histSel=d;renderHistory()}
+function renderHistDetail(date){
+  const spikes=getSpikes();
+  const s=spikes.find(x=>x.date===date);
+  const pts=getPts(date),acts=getActs(date);
+  const done=acts.filter(a=>a.status==='Concluído').length;
+  document.getElementById('h-detail').innerHTML=`
+    <div>
+      <div class="flex fac fjb mb16 np" style="flex-wrap:wrap;gap:10px">
+        <div><h2 style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:800">Spike Day ${fmtD(date)}</h2>
+        <p class="text-muted" style="font-size:12px;margin-top:2px">${pts.length} pontos · ${acts.length} ações · ${done} concluídas${s?.status==='finalized'?` · Finalizado em ${new Date(s.finalizedAt).toLocaleDateString('pt-BR')}`:''}</p></div>
+        <div class="flex gap8">
+          ${s?.status==='finalized'?bdg('✓ Finalizado','bdg-g'):bdg('⚡ Aberto','bdg-sh')}
+          <button class="btn btn-secondary btn-sm np" onclick="window.print()">🖨️ PDF</button>
+        </div>
+      </div>
+      <div class="kgrid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+        <div class="kcard"><div class="klbl">📌 Pontos</div><div class="kval kv-sh">${pts.length}</div></div>
+        <div class="kcard"><div class="klbl">🎯 Ações</div><div class="kval kv-b">${acts.length}</div></div>
+        <div class="kcard"><div class="klbl">✅ Concluídas</div><div class="kval kv-g">${done}</div></div>
+      </div>
+      ${pts.length===0?`<div class="card empty" style="padding:32px"><p>Nenhum ponto neste spike day</p></div>`
+        :pts.map((pt,i)=>{
+          const pa=acts.filter(a=>a.pointId===pt.id);
+          return `<div class="pt-card" style="margin-bottom:10px">
+            <div class="pt-head" style="cursor:default">
+              <div class="pt-num">${i+1}</div>
+              <div style="flex:1"><div style="font-weight:700;font-size:13px">${pt.oque}</div>
+              <div class="pt-tags">${bdg(pt.area,'bdg-gr')}${bdg(pt.turno,'bdg-gr')}${bdg(pt.tipo,TIPO_CLS[pt.tipo]||'bdg-gr')}${bdg(pt.impacto,IMP_CLS[pt.impacto]||'bdg-gr')}</div></div>
+            </div>
+            ${pa.length?`<div class="pt-body" style="padding-top:10px"><div class="tw"><table>
+              <thead><tr><th>Ação</th><th>Responsável</th><th>Prazo</th><th>Prioridade</th><th>Status</th></tr></thead>
+              <tbody>${pa.map(a=>`<tr><td>${a.acao}</td><td>${a.responsavel}</td><td>${a.prazo?fmtD(a.prazo):'—'}</td>
+                <td>${bdg(a.prioridade,PRIO_CLS[a.prioridade]||'bdg-gr')}</td>
+                <td>${bdg(a.status,STA_CLS[a.status]||'bdg-gr')}</td></tr>`).join('')}
+              </tbody></table></div></div>`:''}
+          </div>`;
+        }).join('')}
+    </div>
+  `;
+}
+
+(function init(){
+  document.getElementById('li-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('li-email').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('li-date').focus()});
+  document.getElementById('li-date').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+  if(CFG.SHEETS_URL==='SUA_URL_AQUI'){
+    const sb=document.getElementById('sbar-txt');if(sb)sb.textContent='⚠️ Google Sheets não configurado — veja themis-setup.md';
+  }
+  setTimeout(()=>{
+    document.getElementById('loading').style.display='none';
+    document.getElementById('page-login').style.display='flex';
+  },900);
+})();
+</script>
+</body>
+</html>
