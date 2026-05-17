@@ -389,7 +389,7 @@ Chart.defaults.color='#6B87A8';
 Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
 
 const CFG={
-  SHEETS_URL:'https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec',
+  SHEETS_URL:'https://script.google.com/macros/s/AKfycbyX907l2CHIXuQzpGeY_s9JFRRgkai8igJjSqVqhua9pcbZP_cDqJ1KLfEySUGHL743xA/exec',
   SHEET_ID:'1elor5tuAm6i5RQztp83WQBuiQvjqwkCKN9ZPAzDi-FU', // ID da planilha para leitura
 };
 
@@ -887,11 +887,16 @@ function renderDash(){
 
 // Método 1: fetch GET direto na URL do Apps Script (precisa código v3.1)
 async function fetchFromScript(){
-  const url=CFG.SHEETS_URL+'?action=getAllData&t='+Date.now();
-  const res=await fetch(url,{method:'GET',cache:'no-store'});
+  // POST funciona com CORS — mesmo método que grava dados
+  const res=await fetch(CFG.SHEETS_URL,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain'},
+    body:JSON.stringify({action:'getAllData'}),
+    cache:'no-store',
+  });
   if(!res.ok) throw new Error('HTTP '+res.status);
   const data=await res.json();
-  if(!data.ok) throw new Error('Apps Script retornou erro');
+  if(!data.ok) throw new Error('Script: '+(data.error||'sem dados'));
   return data;
 }
 
@@ -1024,8 +1029,8 @@ function _renderHistContent(method){
 
   // Guia específico por situação
   const CODE_GET = `// ⚖️ THEMIS – Google Apps Script v3.1
-// Cole TODO este código (Ctrl+A para selecionar tudo, depois cole)
-// Após salvar: Implantar → Gerenciar implantações → ✏️ → Nova versão → Implantar
+// Cole TODO este código: Ctrl+A → Delete → Ctrl+V → Ctrl+S
+// Depois: Implantar → Gerenciar implantações → ✏️ → Nova versão → Implantar
 
 const HEADERS = {
   Acessos:           ['Timestamp','Email','Data Spike (BR)','Data Spike (ISO)'],
@@ -1039,6 +1044,7 @@ const HEADERS = {
 function doPost(e) {
   try {
     var payload = JSON.parse(e.postData.contents);
+    if (payload.action === 'getAllData') return respond(getAllDataObj());
     var sheet = payload.sheet, row = payload.row;
     if (!sheet || !row || !Array.isArray(row)) return respond({ok:false,error:'Payload inválido'});
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1063,7 +1069,7 @@ function getAllDataObj() {
     if (!v) return '';
     if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
     var s = v.toString().trim();
-    if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0,10);
+    if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);
     if (/^\\d{2}\\/\\d{2}\\/\\d{4}/.test(s)) { var pts=s.split('/'); return pts[2]+'-'+pts[1]+'-'+pts[0]; }
     return s;
   }
@@ -1074,7 +1080,7 @@ function getAllDataObj() {
   if (reSh&&reSh.getLastRow()>1) reSh.getRange(2,1,reSh.getLastRow()-1,4).getValues().forEach(function(r){var iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso&&spikes[iso])spikes[iso].status='open';});
   var ptSh=ss.getSheetByName('Pontos');
   if (ptSh&&ptSh.getLastRow()>1) ptSh.getRange(2,1,ptSh.getLastRow()-1,12).getValues().forEach(function(r){
-    var iso=r[11]?toISO(r[11]):toISO(r[2]), id=r[3]?r[3].toString():'';
+    var iso=r[11]?toISO(r[11]):toISO(r[2]),id=r[3]?r[3].toString():'';
     if(!iso||!id)return;
     if(!spikes[iso])spikes[iso]={date:iso,status:'open'};
     if(!points[iso])points[iso]=[];
@@ -1083,14 +1089,14 @@ function getAllDataObj() {
   });
   var acSh=ss.getSheetByName('Acoes');
   if (acSh&&acSh.getLastRow()>1) acSh.getRange(2,1,acSh.getLastRow()-1,11).getValues().forEach(function(r){
-    var iso=r[10]?toISO(r[10]):toISO(r[2]), id=r[3]?r[3].toString():'';
+    var iso=r[10]?toISO(r[10]):toISO(r[2]),id=r[3]?r[3].toString():'';
     if(!iso||!id)return;
     if(!actions[iso])actions[iso]=[];
-    var idx=-1; actions[iso].forEach(function(a,i){if(a.id===id)idx=i;});
+    var idx=-1;actions[iso].forEach(function(a,i){if(a.id===id)idx=i;});
     var obj={id:id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
-    if(idx>=0)actions[iso][idx]=obj; else actions[iso].push(obj);
+    if(idx>=0)actions[iso][idx]=obj;else actions[iso].push(obj);
   });
-  return {ok:true, spikes:Object.values(spikes), points:points, actions:actions};
+  return {ok:true,spikes:Object.values(spikes),points:points,actions:actions};
 }
 
 function respond(obj) {
@@ -1098,44 +1104,94 @@ function respond(obj) {
 }
 function formatHeader(sh,cols){
   sh.getRange(1,1,1,cols).setBackground('#FF5722').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(11);
-  sh.setFrozenRows(1); sh.setColumnWidths(1,cols,160);
+  sh.setFrozenRows(1);sh.setColumnWidths(1,cols,160);
 }
 function criarAbas(){
   var ss=SpreadsheetApp.getActiveSpreadsheet();
   Object.keys(HEADERS).forEach(function(n){if(!ss.getSheetByName(n)){var sh=ss.insertSheet(n);sh.appendRow(HEADERS[n]);formatHeader(sh,HEADERS[n].length);}});
-  SpreadsheetApp.getUi().alert('✅ Abas criadas!');
-}
-function testeConexao(){
-  var ss=SpreadsheetApp.getActiveSpreadsheet();
-  var sh=ss.getSheetByName('Acessos')||ss.insertSheet('Acessos');
-  sh.appendRow(['TESTE '+new Date().toLocaleString('pt-BR'),'teste@shopee.com','01/01/2026','2026-01-01']);
-  SpreadsheetApp.getUi().alert('✅ Gravação OK! Veja a aba "Acessos".');
+  SpreadsheetApp.getUi().alert('Abas criadas!');
 }`;
   window._gs_code = CODE_GET;
+  const CODE_MINIMAL = `// ══════════════════════════════════════════
+// ADICIONE ESTAS 2 COISAS AO SEU APPS SCRIPT
+// ══════════════════════════════════════════
+
+// 1) Cole esta linha NO INÍCIO do seu doPost, logo após "try {":
+//    (dentro da função doPost existente, antes do "var payload = ...")
+
+if (e.postData && JSON.parse(e.postData.contents).action === 'getAllData') {
+  return respond(getAllDataObj());
+}
+
+// ─────────────────────────────────────────
+// 2) Cole esta função COMPLETA em qualquer lugar do arquivo:
+
+function getAllDataObj() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  function toISO(v) {
+    if (!v) return '';
+    if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var s = v.toString().trim();
+    if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0, 10);
+    if (/^\\d{2}\\/\\d{2}\\/\\d{4}/.test(s)) {
+      var pts = s.split('/');
+      return pts[2] + '-' + pts[1] + '-' + pts[0];
+    }
+    return s;
+  }
+  var spikes = {}, points = {}, actions = {};
+  var finSh = ss.getSheetByName('SpikesFinalizados');
+  if (finSh && finSh.getLastRow() > 1) finSh.getRange(2,1,finSh.getLastRow()-1,4).getValues().forEach(function(r){var iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso)spikes[iso]={date:iso,status:'finalized'};});
+  var reSh = ss.getSheetByName('SpikesReabertos');
+  if (reSh && reSh.getLastRow() > 1) reSh.getRange(2,1,reSh.getLastRow()-1,4).getValues().forEach(function(r){var iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso&&spikes[iso])spikes[iso].status='open';});
+  var ptSh = ss.getSheetByName('Pontos');
+  if (ptSh && ptSh.getLastRow() > 1) ptSh.getRange(2,1,ptSh.getLastRow()-1,12).getValues().forEach(function(r){
+    var iso=r[11]?toISO(r[11]):toISO(r[2]),id=r[3]?r[3].toString():'';
+    if(!iso||!id)return;
+    if(!spikes[iso])spikes[iso]={date:iso,status:'open'};
+    if(!points[iso])points[iso]=[];
+    if(!points[iso].some(function(p){return p.id===id;}))
+      points[iso].push({id:id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
+  });
+  var acSh = ss.getSheetByName('Acoes');
+  if (acSh && acSh.getLastRow() > 1) acSh.getRange(2,1,acSh.getLastRow()-1,11).getValues().forEach(function(r){
+    var iso=r[10]?toISO(r[10]):toISO(r[2]),id=r[3]?r[3].toString():'';
+    if(!iso||!id)return;
+    if(!actions[iso])actions[iso]=[];
+    var idx=-1;actions[iso].forEach(function(a,i){if(a.id===id)idx=i;});
+    var obj={id:id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
+    if(idx>=0)actions[iso][idx]=obj;else actions[iso].push(obj);
+  });
+  return {ok:true,spikes:Object.values(spikes),points:points,actions:actions};
+}`;
+  window._gs_minimal = CODE_MINIMAL;
 
   const guideOldScript = `<div style="background:var(--bg2);border:1px solid rgba(245,166,35,.35);border-radius:var(--r-lg);padding:20px;margin-bottom:20px">
-    <div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:4px">⚡ Apps Script conectado — só precisa atualizar o código (2 passos)</div>
-    <div style="font-size:12px;color:var(--txt2);margin-bottom:14px">O servidor responde corretamente, mas roda código antigo sem função de leitura.</div>
-    <div class="g2" style="gap:16px">
-      <div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px">
-        <div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:10px">Passo 1 — Abrir o Apps Script e colar o código</div>
-        <div style="font-size:12px;color:var(--txt2);line-height:1.8;margin-bottom:12px">
-          1. Abra a <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">planilha</a><br>
-          2. Menu: <b style="color:var(--txt)">Extensões → Apps Script</b><br>
-          3. <b style="color:var(--txt)">Selecione todo o código (Ctrl+A)</b> e apague<br>
-          4. Cole o código abaixo e salve <b style="color:var(--txt)">(Ctrl+S)</b>
+    <div style="font-size:14px;font-weight:700;color:var(--am);margin-bottom:6px">⚡ Apps Script conectado — só falta atualizar o código</div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:16px">Escolha a opção mais fácil para você:</div>
+    <div class="g2" style="gap:14px">
+      <div style="background:var(--bg1);border:2px solid var(--or);border-radius:var(--r);padding:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:8px">✂️ OPÇÃO FÁCIL — Adicionar 2 trechos ao código existente</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.9;margin-bottom:12px">
+          1. Abra a planilha → <b style="color:var(--txt)">Extensões → Apps Script</b><br>
+          2. Clique em <b style="color:var(--txt)">📋 Copiar adição mínima</b> abaixo<br>
+          3. Cole no INÍCIO do arquivo (antes de qualquer função)<br>
+          4. Salve <b style="color:var(--txt)">(Ctrl+S)</b><br>
+          5. <b style="color:var(--txt)">Implantar → Gerenciar → ✏️ → Nova versão → Implantar</b><br>
+          6. Clique em 🔄 Atualizar acima
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(window._gs_code||'').then(()=>toast('Código copiado! Cole no Apps Script.'))">📋 Copiar código</button>
+        <button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText(window._gs_minimal||'').then(()=>toast('✅ Código copiado! Cole no início do arquivo Apps Script.'))">📋 Copiar adição mínima</button>
       </div>
       <div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px">
-        <div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:10px">Passo 2 — Criar nova versão</div>
-        <div style="font-size:12px;color:var(--txt2);line-height:1.8">
-          1. No Apps Script: <b style="color:var(--txt)">Implantar → Gerenciar implantações</b><br>
-          2. Clique no <b style="color:var(--txt)">✏️ lápis</b> (editar)<br>
-          3. Em "Versão" → <b style="color:var(--txt)">Nova versão</b><br>
-          4. Clique em <b style="color:var(--txt)">Implantar</b><br>
-          5. Volte aqui e clique em <b style="color:var(--txt)">🔄 Atualizar</b>
+        <div style="font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:8px">🔄 OPÇÃO COMPLETA — Substituir todo o código</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.9;margin-bottom:12px">
+          1. Abra a planilha → <b style="color:var(--txt)">Extensões → Apps Script</b><br>
+          2. Clique em <b style="color:var(--txt)">📋 Copiar código completo</b> abaixo<br>
+          3. No editor: <b style="color:var(--txt)">Ctrl+A → Delete → Ctrl+V → Ctrl+S</b><br>
+          4. <b style="color:var(--txt)">Implantar → Gerenciar → ✏️ → Nova versão → Implantar</b><br>
+          5. Clique em 🔄 Atualizar acima
         </div>
+        <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(window._gs_code||'').then(()=>toast('✅ Código completo copiado! Ctrl+A → Delete → Ctrl+V.'))">📋 Copiar código completo</button>
       </div>
     </div>
   </div>`;
