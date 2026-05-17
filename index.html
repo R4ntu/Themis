@@ -388,7 +388,10 @@ body{padding-bottom:34px}
 Chart.defaults.color='#6B87A8';
 Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
 
-const CFG={SHEETS_URL:'https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec'};
+const CFG={
+  SHEETS_URL:'https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec',
+  SHEET_ID:'1elor5tuAm6i5RQztp83WQBuiQvjqwkCKN9ZPAzDi-FU', // ID da planilha para leitura
+};
 
 const TURNOS=['T1','T2','T3'];
 const AREAS=['Inbound','Inventário','Picking Leve','Checking Leve','Picking HS','Checking HS','HV','Outros'];
@@ -438,7 +441,7 @@ async function postToSheets(payload){
 }
 
 async function syncSheet(sheet,row){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec')return;
+  if(!CFG.SHEETS_URL)return;
   setSync('syncing');
   try{
     await postToSheets({sheet,row});
@@ -460,7 +463,7 @@ function showSheetsError403(){
 }
 
 async function flushQueue(){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec')return;
+  if(!CFG.SHEETS_URL)return;
   const q=JSON.parse(localStorage.getItem('tmss_queue')||'[]');
   if(!q.length)return;
   const ok=[];
@@ -475,15 +478,17 @@ async function flushQueue(){
 }
 
 async function checkSheetsHealth(){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec')return;
+  if(!CFG.SHEET_ID) return;
   try{
-    const data=await jsonpFetch(CFG.SHEETS_URL,5000);
-    if(data&&data.ok) setSync('ok');
-  }catch(e){
-    setSync('err');
-    const sb=document.getElementById('sbar-txt');
-    if(sb) sb.innerHTML='⚠️ Sheets inacessível — verifique se a URL está correta e se o acesso é "Qualquer pessoa"';
-  }
+    // Testa leitura via gviz (endpoint público do Google)
+    const res=await fetch(`https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Acessos&t=${Date.now()}`,{cache:'no-store'});
+    if(res.ok) setSync('ok');
+    else{
+      setSync('err');
+      const sb=document.getElementById('sbar-txt');
+      if(sb) sb.innerHTML='⚠️ Planilha não publicada — veja instrução abaixo para ativar o compartilhamento';
+    }
+  }catch(e){ setSync('err'); }
 }
 function setSync(st){
   document.querySelectorAll('.sync-led').forEach(el=>el.className='sync-led '+st);
@@ -882,52 +887,115 @@ function renderDash(){
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ☁️  CARREGAR DADOS DO SHEETS via JSONP (sem restrição CORS)
+// ☁️  CARREGAR DADOS via Google Sheets gviz (sem CORS, sem Apps Script)
 // ══════════════════════════════════════════════════════════════════════
-function jsonpFetch(url, timeout=12000){
-  return new Promise((resolve,reject)=>{
-    const cb='_tmss_'+Date.now();
-    const el=document.createElement('script');
-    const timer=setTimeout(()=>{
-      cleanup();reject(new Error('timeout'));
-    },timeout);
-    function cleanup(){ delete window[cb]; el.remove(); clearTimeout(timer); }
-    window[cb]=(data)=>{ cleanup(); resolve(data); };
-    el.onerror=()=>{ cleanup(); reject(new Error('script error')); };
-    el.src=url+(url.includes('?')?'&':'?')+'callback='+cb+'&t='+Date.now();
-    document.head.appendChild(el);
-  });
+
+// Lê uma aba como CSV via endpoint gviz (funciona com sheet publicada)
+async function gvizCSV(sheetName){
+  const url=`https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+  const res=await fetch(url,{cache:'no-store'});
+  if(!res.ok) throw new Error('gviz HTTP '+res.status);
+  const txt=await res.text();
+  return parseCSV(txt);
+}
+
+// Parser CSV robusto (lida com aspas e vírgulas dentro de campos)
+function parseCSV(text){
+  const rows=[];
+  const lines=text.split(/\r?\n/);
+  for(const line of lines){
+    if(!line.trim()) continue;
+    const row=[];let cur='';let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i];
+      if(c==='"'){
+        if(inQ&&line[i+1]==='"'){cur+='"';i++;}
+        else inQ=!inQ;
+      } else if(c===','&&!inQ){row.push(cur);cur='';}
+      else cur+=c;
+    }
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows; // primeira linha = cabeçalhos
+}
+
+// Converte dd/mm/yyyy → yyyy-mm-dd
+function toISO(v){
+  if(!v) return '';
+  const s=v.toString().trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  if(/^\d{2}\/\d{2}\/\d{4}/.test(s)){const[d,m,y]=s.split('/');return`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;}
+  return s;
 }
 
 async function loadFromSheets(){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec') return false;
+  if(!CFG.SHEET_ID) return false;
   try{
-    const data=await jsonpFetch(CFG.SHEETS_URL+'?action=getAllData');
-    if(!data||!data.ok) return false;
+    // Lê as abas em paralelo
+    const[ptRows,acRows,finRows,reRows]=await Promise.all([
+      gvizCSV('Pontos').catch(()=>[]),
+      gvizCSV('Acoes').catch(()=>[]),
+      gvizCSV('SpikesFinalizados').catch(()=>[]),
+      gvizCSV('SpikesReabertos').catch(()=>[]),
+    ]);
 
-    // Merge spikes: remote preenche, local prevalece para status
+    const spikes={};
+    const points={};
+    const actions={};
+
+    // SpikesFinalizados: Timestamp,Email,DataBR,DataISO
+    for(let i=1;i<finRows.length;i++){
+      const r=finRows[i];
+      const iso=r[3]?toISO(r[3]):toISO(r[2]);
+      if(iso) spikes[iso]={date:iso,status:'finalized',finalizedAt:r[0]||''};
+    }
+    // SpikesReabertos: sobrescreve
+    for(let i=1;i<reRows.length;i++){
+      const r=reRows[i];
+      const iso=r[3]?toISO(r[3]):toISO(r[2]);
+      if(iso&&spikes[iso]) spikes[iso].status='open';
+    }
+    // Pontos: Timestamp,Email,DataBR,ID,OQue,Turno,Area,Tipo,Impacto,Desc,Obs,DataISO
+    for(let i=1;i<ptRows.length;i++){
+      const r=ptRows[i];
+      const iso=r[11]?toISO(r[11]):toISO(r[2]);
+      const id=r[3]?r[3].trim():'';
+      if(!iso||!id) continue;
+      if(!spikes[iso]) spikes[iso]={date:iso,status:'open'};
+      if(!points[iso]) points[iso]=[];
+      if(!points[iso].find(p=>p.id===id)){
+        points[iso].push({id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',
+          area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
+      }
+    }
+    // Acoes: Timestamp,Email,DataBR,IDacao,IDponto,Acao,Resp,Prazo,Prio,Status,DataISO
+    for(let i=1;i<acRows.length;i++){
+      const r=acRows[i];
+      const iso=r[10]?toISO(r[10]):toISO(r[2]);
+      const id=r[3]?r[3].trim():'';
+      if(!iso||!id) continue;
+      if(!actions[iso]) actions[iso]=[];
+      const idx=actions[iso].findIndex(a=>a.id===id);
+      const obj={id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',
+        prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
+      if(idx>=0) actions[iso][idx]=obj; else actions[iso].push(obj);
+    }
+
+    // Merge com local (local prevalece)
     const localMap={};
     getSpikes().forEach(s=>localMap[s.date]=s);
-    (data.spikes||[]).forEach(s=>{
-      if(!localMap[s.date]) localMap[s.date]=s;
-    });
+    Object.values(spikes).forEach(s=>{ if(!localMap[s.date]) localMap[s.date]=s; });
     saveSpikes(Object.values(localMap).sort((a,b)=>b.date.localeCompare(a.date)));
 
-    // Merge pontos por spike (remote preenche gaps, local prevalece por ID)
-    const remPts=data.points||{};
-    Object.keys(remPts).forEach(spike=>{
-      const localById={};
-      getPts(spike).forEach(p=>localById[p.id]=p);
-      remPts[spike].forEach(p=>{ if(!localById[p.id]) localById[p.id]=p; });
+    Object.keys(points).forEach(spike=>{
+      const localById={};getPts(spike).forEach(p=>localById[p.id]=p);
+      points[spike].forEach(p=>{ if(!localById[p.id]) localById[p.id]=p; });
       savePts(spike,Object.values(localById));
     });
-
-    // Merge ações por spike
-    const remActs=data.actions||{};
-    Object.keys(remActs).forEach(spike=>{
-      const localById={};
-      getActs(spike).forEach(a=>localById[a.id]=a);
-      remActs[spike].forEach(a=>{ if(!localById[a.id]) localById[a.id]=a; });
+    Object.keys(actions).forEach(spike=>{
+      const localById={};getActs(spike).forEach(a=>localById[a.id]=a);
+      actions[spike].forEach(a=>{ if(!localById[a.id]) localById[a.id]=a; });
       saveActs(spike,Object.values(localById));
     });
 
@@ -1040,11 +1108,10 @@ function renderHistDetail(date){
   document.getElementById('li-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('li-email').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('li-date').focus()});
   document.getElementById('li-date').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
-  if(CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec'){
+  if(!CFG.SHEET_ID){
     const sb=document.getElementById('sbar-txt');
-    if(sb)sb.textContent='⚠️ Google Sheets não configurado — veja themis-setup.md';
+    if(sb)sb.textContent='⚠️ SHEET_ID não configurado';
   } else {
-    // Verifica conexão com Sheets e tenta reenviar fila pendente
     checkSheetsHealth().then(()=>flushQueue());
     setInterval(flushQueue,120000);
   }
