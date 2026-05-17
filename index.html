@@ -388,7 +388,7 @@ body{padding-bottom:34px}
 Chart.defaults.color='#6B87A8';
 Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
 
-const CFG={SHEETS_URL:'SUA_URL_AQUI'};
+const CFG={SHEETS_URL:'https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec'};
 
 const TURNOS=['T1','T2','T3'];
 const AREAS=['Inbound','Inventário','Picking Leve','Checking Leve','Picking HS','Checking HS','HV','Outros'];
@@ -460,7 +460,7 @@ function showSheetsError403(){
 }
 
 async function flushQueue(){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
+  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec')return;
   const q=JSON.parse(localStorage.getItem('tmss_queue')||'[]');
   if(!q.length)return;
   const ok=[];
