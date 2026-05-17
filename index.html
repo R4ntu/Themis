@@ -438,7 +438,7 @@ async function postToSheets(payload){
 }
 
 async function syncSheet(sheet,row){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
+  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec')return;
   setSync('syncing');
   try{
     await postToSheets({sheet,row});
@@ -1040,7 +1040,7 @@ function renderHistDetail(date){
   document.getElementById('li-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('li-email').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('li-date').focus()});
   document.getElementById('li-date').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
-  if(CFG.SHEETS_URL==='SUA_URL_AQUI'){
+  if(CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec'){
     const sb=document.getElementById('sbar-txt');
     if(sb)sb.textContent='⚠️ Google Sheets não configurado — veja themis-setup.md';
   } else {
