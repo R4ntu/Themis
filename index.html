@@ -970,19 +970,25 @@ function buildMaps(ptRows,acRows,finRows,reRows){
 }
 
 async function loadFromSheets(){
-  // ── Método 1: fetch GET direto no Apps Script ─────────────────────
+  // ── Método 1: GET ao Apps Script ─────────────────────────────────
   if(CFG.SHEETS_URL){
     try{
-      const data=await fetchFromScript();
-      if(data.spikes&&(data.spikes.length>0||Object.keys(data.points||{}).length>0)){
-        mergeRemoteData(data.spikes,data.points||{},data.actions||{});
-        setSync('ok');return 'script';
+      const url=CFG.SHEETS_URL+'?action=getAllData&t='+Date.now();
+      const res=await fetch(url,{method:'GET',cache:'no-store'});
+      if(res.ok){
+        const data=await res.json();
+        if(data.ok && data.spikes && data.spikes.length>=0){
+          // Código novo rodando — usa os dados
+          mergeRemoteData(data.spikes,data.points||{},data.actions||{});
+          setSync('ok');return 'script';
+        } else if(data.ok){
+          // Apps Script acessível mas código antigo (sem campo spikes)
+          return 'old_script';
+        }
       }
-    }catch(e){
-      console.info('[THEMIS] Método 1 (Script GET) falhou:',e.message);
-    }
+    }catch(e){console.info('[THEMIS] Script GET:',e.message);}
   }
-  // ── Método 2: CSV export público ─────────────────────────────────
+  // ── Método 2: CSV export (planilha com acesso público) ────────────
   if(CFG.SHEET_ID){
     try{
       const[ptRows,acRows,finRows,reRows]=await Promise.all([
@@ -995,9 +1001,7 @@ async function loadFromSheets(){
         mergeRemoteData(spikes,ptMap,acMap);
         setSync('ok');return 'csv';
       }
-    }catch(e){
-      console.info('[THEMIS] Método 2 (CSV) falhou:',e.message);
-    }
+    }catch(e){console.info('[THEMIS] CSV:',e.message);}
   }
   return false;
 }
@@ -1016,8 +1020,142 @@ function renderHistory(){
 
 function _renderHistContent(method){
   const spikes=getSpikes();
-  const ml=method==='script'?'<span style="color:var(--gn);font-size:11px;margin-left:8px">● Apps Script ✓</span>':method==='csv'?'<span style="color:var(--gn);font-size:11px;margin-left:8px">● CSV Export ✓</span>':'<span style="color:var(--am);font-size:11px;margin-left:8px">● Somente dados locais</span>';
-  const guide=method?'':`<div style="background:var(--bg2);border:1px solid rgba(245,166,35,.3);border-radius:var(--r-lg);padding:20px;margin-bottom:20px"><div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:14px">⚠️ Dados locais apenas — faça uma das opções abaixo para ver dados de todos os usuários:</div><div class="g2" style="gap:16px"><div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px"><div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:8px">⚡ OPÇÃO A — 1 passo (mais rápida)</div><div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Abra a <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">planilha</a><br>2. <b style="color:var(--txt)">Arquivo → Compartilhar → Compartilhar com outras pessoas</b><br>3. Em "Acesso geral" → <b style="color:var(--txt)">Qualquer pessoa com o link</b> → Visualizador<br>4. Clique em Concluído<br>5. Clique em 🔄 Atualizar</div></div><div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px"><div style="font-size:12px;font-weight:700;color:var(--bl);margin-bottom:8px">⚙️ OPÇÃO B — Via Apps Script</div><div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Na planilha: <b style="color:var(--txt)">Extensões → Apps Script</b><br>2. Substitua o código pelo <b style="color:var(--txt)">themis-appscript.gs v3.1</b><br>3. <b style="color:var(--txt)">Implantar → Gerenciar → ✏️ → Nova versão</b><br>4. Acesso: <b style="color:var(--txt)">✅ "Qualquer pessoa"</b> → Implantar<br>5. Clique em 🔄 Atualizar</div></div></div></div>`;
+  const ml=method==='script'?'<span style="color:var(--gn);font-size:11px;margin-left:8px">● Apps Script ✓</span>':method==='csv'?'<span style="color:var(--gn);font-size:11px;margin-left:8px">● CSV Export ✓</span>':method==='old_script'?'<span style="color:var(--am);font-size:11px;margin-left:8px">● Apps Script acessível (código desatualizado)</span>':'<span style="color:var(--rd);font-size:11px;margin-left:8px">● Sem acesso ao Sheets</span>';
+
+  // Guia específico por situação
+  const CODE_GET = `// ⚖️ THEMIS – Google Apps Script v3.1
+// Cole TODO este código (Ctrl+A para selecionar tudo, depois cole)
+// Após salvar: Implantar → Gerenciar implantações → ✏️ → Nova versão → Implantar
+
+const HEADERS = {
+  Acessos:           ['Timestamp','Email','Data Spike (BR)','Data Spike (ISO)'],
+  Pontos:            ['Timestamp','Email','Data Spike (BR)','ID Ponto','O Quê','Turno','Área','Tipo','Impacto','Descrição','Observações','Data Spike (ISO)'],
+  Acoes:             ['Timestamp','Email','Data Spike (BR)','ID Ação','ID Ponto','Ação','Responsável','Prazo','Prioridade','Status','Data Spike (ISO)'],
+  AcoesUpdate:       ['Timestamp','Email','Data Spike (BR)','ID Ação','Campo Alterado','Novo Valor'],
+  SpikesFinalizados: ['Timestamp','Email','Data Spike (BR)','Data Spike (ISO)'],
+  SpikesReabertos:   ['Timestamp','Email','Data Spike (BR)','Data Spike (ISO)'],
+};
+
+function doPost(e) {
+  try {
+    var payload = JSON.parse(e.postData.contents);
+    var sheet = payload.sheet, row = payload.row;
+    if (!sheet || !row || !Array.isArray(row)) return respond({ok:false,error:'Payload inválido'});
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(sheet);
+    if (!sh) { sh = ss.insertSheet(sheet); if (HEADERS[sheet]) { sh.appendRow(HEADERS[sheet]); formatHeader(sh, HEADERS[sheet].length); } }
+    sh.appendRow(row);
+    var lr = sh.getLastRow();
+    sh.getRange(lr,1,1,sh.getLastColumn()).setVerticalAlignment('middle').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+    return respond({ok:true, sheet:sheet, rowAdded:lr});
+  } catch(err) { return respond({ok:false, error:err.message}); }
+}
+
+function doGet(e) {
+  var p = e.parameter || {}, action = p.action || '';
+  var result = (action === 'getAllData') ? getAllDataObj() : {ok:true, app:'THEMIS', version:'3.1', status:'online'};
+  return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getAllDataObj() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  function toISO(v) {
+    if (!v) return '';
+    if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    var s = v.toString().trim();
+    if (/^\\d{4}-\\d{2}-\\d{2}/.test(s)) return s.slice(0,10);
+    if (/^\\d{2}\\/\\d{2}\\/\\d{4}/.test(s)) { var pts=s.split('/'); return pts[2]+'-'+pts[1]+'-'+pts[0]; }
+    return s;
+  }
+  var spikes={}, points={}, actions={};
+  var finSh=ss.getSheetByName('SpikesFinalizados');
+  if (finSh&&finSh.getLastRow()>1) finSh.getRange(2,1,finSh.getLastRow()-1,4).getValues().forEach(function(r){var iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso)spikes[iso]={date:iso,status:'finalized'};});
+  var reSh=ss.getSheetByName('SpikesReabertos');
+  if (reSh&&reSh.getLastRow()>1) reSh.getRange(2,1,reSh.getLastRow()-1,4).getValues().forEach(function(r){var iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso&&spikes[iso])spikes[iso].status='open';});
+  var ptSh=ss.getSheetByName('Pontos');
+  if (ptSh&&ptSh.getLastRow()>1) ptSh.getRange(2,1,ptSh.getLastRow()-1,12).getValues().forEach(function(r){
+    var iso=r[11]?toISO(r[11]):toISO(r[2]), id=r[3]?r[3].toString():'';
+    if(!iso||!id)return;
+    if(!spikes[iso])spikes[iso]={date:iso,status:'open'};
+    if(!points[iso])points[iso]=[];
+    if(!points[iso].some(function(p){return p.id===id;}))
+      points[iso].push({id:id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
+  });
+  var acSh=ss.getSheetByName('Acoes');
+  if (acSh&&acSh.getLastRow()>1) acSh.getRange(2,1,acSh.getLastRow()-1,11).getValues().forEach(function(r){
+    var iso=r[10]?toISO(r[10]):toISO(r[2]), id=r[3]?r[3].toString():'';
+    if(!iso||!id)return;
+    if(!actions[iso])actions[iso]=[];
+    var idx=-1; actions[iso].forEach(function(a,i){if(a.id===id)idx=i;});
+    var obj={id:id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
+    if(idx>=0)actions[iso][idx]=obj; else actions[iso].push(obj);
+  });
+  return {ok:true, spikes:Object.values(spikes), points:points, actions:actions};
+}
+
+function respond(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+function formatHeader(sh,cols){
+  sh.getRange(1,1,1,cols).setBackground('#FF5722').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(11);
+  sh.setFrozenRows(1); sh.setColumnWidths(1,cols,160);
+}
+function criarAbas(){
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  Object.keys(HEADERS).forEach(function(n){if(!ss.getSheetByName(n)){var sh=ss.insertSheet(n);sh.appendRow(HEADERS[n]);formatHeader(sh,HEADERS[n].length);}});
+  SpreadsheetApp.getUi().alert('✅ Abas criadas!');
+}
+function testeConexao(){
+  var ss=SpreadsheetApp.getActiveSpreadsheet();
+  var sh=ss.getSheetByName('Acessos')||ss.insertSheet('Acessos');
+  sh.appendRow(['TESTE '+new Date().toLocaleString('pt-BR'),'teste@shopee.com','01/01/2026','2026-01-01']);
+  SpreadsheetApp.getUi().alert('✅ Gravação OK! Veja a aba "Acessos".');
+}`;
+  window._gs_code = CODE_GET;
+
+  const guideOldScript = `<div style="background:var(--bg2);border:1px solid rgba(245,166,35,.35);border-radius:var(--r-lg);padding:20px;margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:4px">⚡ Apps Script conectado — só precisa atualizar o código (2 passos)</div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:14px">O servidor responde corretamente, mas roda código antigo sem função de leitura.</div>
+    <div class="g2" style="gap:16px">
+      <div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:10px">Passo 1 — Abrir o Apps Script e colar o código</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.8;margin-bottom:12px">
+          1. Abra a <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">planilha</a><br>
+          2. Menu: <b style="color:var(--txt)">Extensões → Apps Script</b><br>
+          3. <b style="color:var(--txt)">Selecione todo o código (Ctrl+A)</b> e apague<br>
+          4. Cole o código abaixo e salve <b style="color:var(--txt)">(Ctrl+S)</b>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(window._gs_code||'').then(()=>toast('Código copiado! Cole no Apps Script.'))">📋 Copiar código</button>
+      </div>
+      <div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:10px">Passo 2 — Criar nova versão</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.8">
+          1. No Apps Script: <b style="color:var(--txt)">Implantar → Gerenciar implantações</b><br>
+          2. Clique no <b style="color:var(--txt)">✏️ lápis</b> (editar)<br>
+          3. Em "Versão" → <b style="color:var(--txt)">Nova versão</b><br>
+          4. Clique em <b style="color:var(--txt)">Implantar</b><br>
+          5. Volte aqui e clique em <b style="color:var(--txt)">🔄 Atualizar</b>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  const guideNoAccess = `<div style="background:var(--bg2);border:1px solid rgba(245,166,35,.3);border-radius:var(--r-lg);padding:20px;margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:14px">⚠️ Sem conexão com o Sheets — escolha uma opção:</div>
+    <div class="g2" style="gap:16px">
+      <div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:8px">⚡ OPÇÃO A — Planilha pública (1 passo)</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Abra a <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">planilha</a><br>2. <b style="color:var(--txt)">Arquivo → Compartilhar → Compartilhar com outras pessoas</b><br>3. "Acesso geral" → <b style="color:var(--txt)">Qualquer pessoa com o link</b> → Visualizador<br>4. Concluído → 🔄 Atualizar</div>
+      </div>
+      <div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px">
+        <div style="font-size:12px;font-weight:700;color:var(--bl);margin-bottom:8px">⚙️ OPÇÃO B — Atualizar Apps Script</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.9">1. <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">Planilha</a> → <b style="color:var(--txt)">Extensões → Apps Script</b><br>2. Ctrl+A → apague → cole o <b style="color:var(--txt)">themis-appscript.gs</b><br>3. <b style="color:var(--txt)">Implantar → Gerenciar → ✏️ → Nova versão</b><br>4. Acesso: <b style="color:var(--txt)">Qualquer pessoa</b> → Implantar → 🔄 Atualizar</div>
+      </div>
+    </div>
+  </div>`;
+
+  const guide = method==='old_script' ? guideOldScript : (method ? '' : guideNoAccess);
+  const _ignored = `<div style="background:var(--bg2);border:1px solid rgba(245,166,35,.3);border-radius:var(--r-lg);padding:20px;margin-bottom:20px"><div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:14px">⚠️ Dados locais apenas — faça uma das opções abaixo para ver dados de todos os usuários:</div><div class="g2" style="gap:16px"><div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px"><div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:8px">⚡ OPÇÃO A — 1 passo (mais rápida)</div><div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Abra a <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">planilha</a><br>2. <b style="color:var(--txt)">Arquivo → Compartilhar → Compartilhar com outras pessoas</b><br>3. Em "Acesso geral" → <b style="color:var(--txt)">Qualquer pessoa com o link</b> → Visualizador<br>4. Clique em Concluído<br>5. Clique em 🔄 Atualizar</div></div><div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px"><div style="font-size:12px;font-weight:700;color:var(--bl);margin-bottom:8px">⚙️ OPÇÃO B — Via Apps Script</div><div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Na planilha: <b style="color:var(--txt)">Extensões → Apps Script</b><br>2. Substitua o código pelo <b style="color:var(--txt)">themis-appscript.gs v3.1</b><br>3. <b style="color:var(--txt)">Implantar → Gerenciar → ✏️ → Nova versão</b><br>4. Acesso: <b style="color:var(--txt)">✅ "Qualquer pessoa"</b> → Implantar<br>5. Clique em 🔄 Atualizar</div></div></div></div>`;
   document.getElementById('c-history').innerHTML=`
     <div class="ph-row">
       <div class="ph" style="margin:0"><h1>🕑 Histórico de Spike Days</h1><p>${spikes.length} spike day${spikes.length!==1?'s':''} encontrado${spikes.length!==1?'s':''} ${ml}</p></div>
