@@ -660,7 +660,7 @@ async function savePoint(){
     observacoes:document.getElementById('f-obs').value.trim(),
     createdAt:new Date().toISOString(),email:S.user.email};
   const pts=getPts(S.user.spike);pts.push(pt);savePts(S.user.spike,pts);
-  syncSheet('Pontos',[fmtNow(),S.user.email,fmtD(S.user.spike),pt.id,pt.oque,pt.turno,pt.area,pt.tipo,pt.impacto,pt.descricao,pt.observacoes]);
+  syncSheet('Pontos',[fmtNow(),S.user.email,fmtD(S.user.spike),pt.id,pt.oque,pt.turno,pt.area,pt.tipo,pt.impacto,pt.descricao,pt.observacoes,S.user.spike]);
   clearFrm();renderFPts();toast('Ponto registrado! ✅');
 }
 function delPt(id){
@@ -763,7 +763,7 @@ async function addAct(pid){
     prioridade:po,status:document.getElementById(`na-st-${pid}`).value||'Aberto',
     createdAt:new Date().toISOString(),email:S.user.email};
   const acts=getActs(S.user.spike);acts.push(act);saveActs(S.user.spike,acts);
-  syncSheet('Acoes',[fmtNow(),S.user.email,fmtD(S.user.spike),act.id,pid,act.acao,act.responsavel,act.prazo,act.prioridade,act.status]);
+  syncSheet('Acoes',[fmtNow(),S.user.email,fmtD(S.user.spike),act.id,pid,act.acao,act.responsavel,act.prazo,act.prioridade,act.status,S.user.spike]);
   renderMeeting();
   const bd=document.getElementById(`pb-${pid}`);if(bd)bd.style.display='block';
   toast('Ação adicionada! ✅');
@@ -883,28 +883,92 @@ function renderDash(){
   });
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// ☁️  CARREGAR DADOS DO SHEETS (para histórico compartilhado)
+// ══════════════════════════════════════════════════════════════════════
+async function loadFromSheets(){
+  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI') return false;
+  try{
+    const res=await fetch(CFG.SHEETS_URL+'?action=getAllData',{method:'GET'});
+    if(!res.ok) return false;
+    const data=await res.json();
+    if(!data.ok) return false;
+
+    // Merge spikes: remote preenche, local prevalece para status
+    const localMap={};
+    getSpikes().forEach(s=>localMap[s.date]=s);
+    (data.spikes||[]).forEach(s=>{
+      if(!localMap[s.date]) localMap[s.date]=s; // só adiciona se não existe local
+    });
+    saveSpikes(Object.values(localMap).sort((a,b)=>b.date.localeCompare(a.date)));
+
+    // Merge pontos: remote preenche gaps, local prevalece (por ID)
+    const remPts=data.points||{};
+    Object.keys(remPts).forEach(spike=>{
+      const localPts=getPts(spike);
+      const localById={};localPts.forEach(p=>localById[p.id]=p);
+      remPts[spike].forEach(p=>{if(!localById[p.id])localById[p.id]=p});
+      savePts(spike,Object.values(localById));
+    });
+
+    // Merge ações: mesmo esquema
+    const remActs=data.actions||{};
+    Object.keys(remActs).forEach(spike=>{
+      const localActs=getActs(spike);
+      const localById={};localActs.forEach(a=>localById[a.id]=a);
+      remActs[spike].forEach(a=>{if(!localById[a.id])localById[a.id]=a});
+      saveActs(spike,Object.values(localById));
+    });
+
+    return true;
+  }catch(e){
+    console.warn('[THEMIS] loadFromSheets:',e.message);
+    return false;
+  }
+}
+
 function renderHistory(){
+  document.getElementById('c-history').innerHTML=`
+    <div class="ph-row">
+      <div class="ph" style="margin:0"><h1>🕑 Histórico de Spike Days</h1><p>Sincronizando com Google Sheets...</p></div>
+    </div>
+    <div style="text-align:center;padding:60px;color:var(--txt2)">
+      <div class="spin" style="margin:0 auto 14px;border-top-color:var(--or)"></div>
+      <p>Carregando dados de todos os usuários...</p>
+    </div>`;
+  loadFromSheets().then(ok=>_renderHistContent(ok));
+}
+
+function _renderHistContent(fromSheets){
   const spikes=getSpikes();
   document.getElementById('c-history').innerHTML=`
-    <div class="ph"><h1>🕑 Histórico de Spike Days</h1><p>${spikes.length} spike day${spikes.length!==1?'s':''} registrado${spikes.length!==1?'s':''}</p></div>
+    <div class="ph-row">
+      <div class="ph" style="margin:0">
+        <h1>🕑 Histórico de Spike Days</h1>
+        <p>${spikes.length} spike day${spikes.length!==1?'s':''} registrado${spikes.length!==1?'s':''}
+        ${fromSheets?`<span style="color:var(--gn);font-size:11px;margin-left:8px">● Sincronizado com Sheets</span>`:`<span style="color:var(--am);font-size:11px;margin-left:8px">● Somente dados locais</span>`}
+        </p>
+      </div>
+      <button class="btn btn-secondary btn-sm np" onclick="S.histSel=null;renderHistory()">🔄 Atualizar</button>
+    </div>
     <div class="hlayout">
       <div class="hside"><div class="card" style="padding:0;overflow:hidden">
         <div style="padding:10px 15px;border-bottom:1px solid var(--bdr);font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.6px">Spike Days (${spikes.length})</div>
-        ${spikes.length===0?`<div style="padding:28px;text-align:center;color:var(--txt2);font-size:13px">Nenhum spike registrado</div>`
+        ${spikes.length===0
+          ?`<div style="padding:28px;text-align:center;color:var(--txt2);font-size:13px">Nenhum spike encontrado</div>`
           :[...spikes].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{
-            const sp=getPts(s.date),sa=getActs(s.date);
-            return `<div class="hitem${S.histSel===s.date?' on':''}" onclick="selHist('${s.date}')">
-              <div><div class="hd">⚡ ${fmtD(s.date)}</div><div class="hm">${sp.length} pontos · ${sa.length} ações</div></div>
-              ${s.status==='finalized'?bdg('✓','bdg-g'):bdg('Aberto','bdg-sh')}
-            </div>`;
-          }).join('')}
+              const sp=getPts(s.date),sa=getActs(s.date);
+              return `<div class="hitem${S.histSel===s.date?' on':''}" onclick="selHist('${s.date}')">
+                <div><div class="hd">⚡ ${fmtD(s.date)}</div><div class="hm">${sp.length} pontos · ${sa.length} ações</div></div>
+                ${s.status==='finalized'?bdg('✓','bdg-g'):bdg('Aberto','bdg-sh')}
+              </div>`;
+            }).join('')}
       </div></div>
       <div id="h-detail"><div class="card empty"><span class="ei" style="font-size:36px">👈</span><p>Selecione um Spike Day para ver os detalhes</p></div></div>
-    </div>
-  `;
+    </div>`;
   if(S.histSel)renderHistDetail(S.histSel);
 }
-function selHist(d){S.histSel=d;renderHistory()}
+function selHist(d){S.histSel=d;_renderHistContent(true);}
 
 function reopenFromHistory(date){
   if(!confirm('Reabrir este Spike Day? O status voltará para "Aberto".'))return;
