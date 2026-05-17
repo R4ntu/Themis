@@ -478,16 +478,11 @@ async function flushQueue(){
 }
 
 async function checkSheetsHealth(){
-  if(!CFG.SHEET_ID) return;
+  if(!CFG.SHEETS_URL) return;
   try{
-    // Testa leitura via gviz (endpoint público do Google)
-    const res=await fetch(`https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Acessos&t=${Date.now()}`,{cache:'no-store'});
-    if(res.ok) setSync('ok');
-    else{
-      setSync('err');
-      const sb=document.getElementById('sbar-txt');
-      if(sb) sb.innerHTML='⚠️ Planilha não publicada — veja instrução abaixo para ativar o compartilhamento';
-    }
+    const res=await fetch(CFG.SHEETS_URL+'?t='+Date.now(),{method:'GET',cache:'no-store'});
+    if(res.ok){const d=await res.json();if(d.ok)setSync('ok');}
+    else setSync('err');
   }catch(e){ setSync('err'); }
 }
 function setSync(st){
@@ -887,26 +882,21 @@ function renderDash(){
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ☁️  LEITURA DO SHEETS — tenta 2 métodos em sequência
+// ☁️  LEITURA DO SHEETS — fetch simples (igual outros projetos)
 // ══════════════════════════════════════════════════════════════════════
 
-// Método 1: JSONP via Apps Script (precisa do código v3.1 implantado)
-function jsonpFetch(url,timeout=10000){
-  return new Promise((resolve,reject)=>{
-    const cb='_tmss_'+Date.now();
-    const el=document.createElement('script');
-    const t=setTimeout(()=>{cleanup();reject(new Error('timeout'));},timeout);
-    function cleanup(){delete window[cb];el.remove();clearTimeout(t);}
-    window[cb]=(d)=>{cleanup();resolve(d);};
-    el.onerror=()=>{cleanup();reject(new Error('script_error'));};
-    el.src=url+(url.includes('?')?'&':'?')+'callback='+cb+'&_='+Date.now();
-    document.head.appendChild(el);
-  });
+// Método 1: fetch GET direto na URL do Apps Script (precisa código v3.1)
+async function fetchFromScript(){
+  const url=CFG.SHEETS_URL+'?action=getAllData&t='+Date.now();
+  const res=await fetch(url,{method:'GET',cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const data=await res.json();
+  if(!data.ok) throw new Error('Apps Script retornou erro');
+  return data;
 }
 
-// Método 2: CSV via export do Google Sheets (precisa de "Compartilhar → Qualquer pessoa pode ver")
+// Método 2: CSV export direto do Google Sheets (planilha pública)
 async function fetchSheetCSV(sheetName){
-  // Usa o endpoint /export que retorna CORS headers quando a planilha é pública
   const url=`https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/export?format=csv&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
   const res=await fetch(url,{cache:'no-store'});
   if(!res.ok) throw new Error('HTTP '+res.status);
@@ -925,13 +915,12 @@ function parseCSV(text){
       else if(c===','&&!inQ){row.push(cur.trim());cur='';}
       else cur+=c;
     }
-    row.push(cur.trim());
-    rows.push(row);
+    row.push(cur.trim());rows.push(row);
   }
   return rows;
 }
 
-// Converte dd/mm/yyyy ou yyyy-mm-dd → yyyy-mm-dd
+// dd/mm/yyyy → yyyy-mm-dd
 function toISO(v){
   if(!v) return '';
   const s=v.toString().trim();
@@ -940,11 +929,11 @@ function toISO(v){
   return s;
 }
 
-// Mescla dados do Sheets no localStorage (remote preenche, local prevalece por ID)
+// Mescla remoto no localStorage (local prevalece por ID)
 function mergeRemoteData(spikesArr,ptMap,acMap){
-  const localMap={};getSpikes().forEach(s=>localMap[s.date]=s);
-  spikesArr.forEach(s=>{if(!localMap[s.date])localMap[s.date]=s;});
-  saveSpikes(Object.values(localMap).sort((a,b)=>b.date.localeCompare(a.date)));
+  const lm={};getSpikes().forEach(s=>lm[s.date]=s);
+  spikesArr.forEach(s=>{if(!lm[s.date])lm[s.date]=s;});
+  saveSpikes(Object.values(lm).sort((a,b)=>b.date.localeCompare(a.date)));
   Object.keys(ptMap).forEach(spike=>{
     const m={};getPts(spike).forEach(p=>m[p.id]=p);
     ptMap[spike].forEach(p=>{if(!m[p.id])m[p.id]=p;});
@@ -957,7 +946,7 @@ function mergeRemoteData(spikesArr,ptMap,acMap){
   });
 }
 
-// Constrói os mapas a partir de linhas CSV (mesmo formato dos dois métodos)
+// Constrói mapas a partir de linhas CSV
 function buildMaps(ptRows,acRows,finRows,reRows){
   const spikes={},ptMap={},acMap={};
   for(let i=1;i<finRows.length;i++){const r=finRows[i];const iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso)spikes[iso]={date:iso,status:'finalized'};}
@@ -967,7 +956,7 @@ function buildMaps(ptRows,acRows,finRows,reRows){
     if(!iso||!id)continue;
     if(!spikes[iso])spikes[iso]={date:iso,status:'open'};
     if(!ptMap[iso])ptMap[iso]=[];
-    if(!ptMap[iso].find(p=>p.id===id)) ptMap[iso].push({id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
+    if(!ptMap[iso].find(p=>p.id===id))ptMap[iso].push({id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
   }
   for(let i=1;i<acRows.length;i++){
     const r=acRows[i];const iso=r[10]?toISO(r[10]):toISO(r[2]);const id=r[3]?r[3].trim():'';
@@ -977,27 +966,23 @@ function buildMaps(ptRows,acRows,finRows,reRows){
     const obj={id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
     if(idx>=0)acMap[iso][idx]=obj;else acMap[iso].push(obj);
   }
-  return {spikes:Object.values(spikes),ptMap,acMap};
+  return{spikes:Object.values(spikes),ptMap,acMap};
 }
 
 async function loadFromSheets(){
-  // ── Método 1: JSONP via Apps Script v3.1 ──────────────────────────
+  // ── Método 1: fetch GET direto no Apps Script ─────────────────────
   if(CFG.SHEETS_URL){
     try{
-      const data=await jsonpFetch(CFG.SHEETS_URL+'?action=getAllData',8000);
-      if(data&&data.ok&&data.spikes&&data.spikes.length>0){
-        // Apps Script retornou dados estruturados
-        const ptMap=data.points||{};const acMap=data.actions||{};
-        mergeRemoteData(data.spikes,ptMap,acMap);
-        setSync('ok');
-        return 'script';
+      const data=await fetchFromScript();
+      if(data.spikes&&(data.spikes.length>0||Object.keys(data.points||{}).length>0)){
+        mergeRemoteData(data.spikes,data.points||{},data.actions||{});
+        setSync('ok');return 'script';
       }
     }catch(e){
-      console.info('[THEMIS] Método 1 (JSONP) indisponível:',e.message);
+      console.info('[THEMIS] Método 1 (Script GET) falhou:',e.message);
     }
   }
-
-  // ── Método 2: CSV via export do Google Sheets ──────────────────────
+  // ── Método 2: CSV export público ─────────────────────────────────
   if(CFG.SHEET_ID){
     try{
       const[ptRows,acRows,finRows,reRows]=await Promise.all([
@@ -1008,15 +993,13 @@ async function loadFromSheets(){
       if(ptRows.length>1||acRows.length>1){
         const{spikes,ptMap,acMap}=buildMaps(ptRows,acRows,finRows,reRows);
         mergeRemoteData(spikes,ptMap,acMap);
-        setSync('ok');
-        return 'csv';
+        setSync('ok');return 'csv';
       }
     }catch(e){
-      console.info('[THEMIS] Método 2 (CSV) indisponível:',e.message);
+      console.info('[THEMIS] Método 2 (CSV) falhou:',e.message);
     }
   }
-
-  return false; // ambos falharam
+  return false;
 }
 
 function renderHistory(){
