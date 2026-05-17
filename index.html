@@ -887,40 +887,51 @@ function renderDash(){
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// ☁️  CARREGAR DADOS via Google Sheets gviz (sem CORS, sem Apps Script)
+// ☁️  LEITURA DO SHEETS — tenta 2 métodos em sequência
 // ══════════════════════════════════════════════════════════════════════
 
-// Lê uma aba como CSV via endpoint gviz (funciona com sheet publicada)
-async function gvizCSV(sheetName){
-  const url=`https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
-  const res=await fetch(url,{cache:'no-store'});
-  if(!res.ok) throw new Error('gviz HTTP '+res.status);
-  const txt=await res.text();
-  return parseCSV(txt);
+// Método 1: JSONP via Apps Script (precisa do código v3.1 implantado)
+function jsonpFetch(url,timeout=10000){
+  return new Promise((resolve,reject)=>{
+    const cb='_tmss_'+Date.now();
+    const el=document.createElement('script');
+    const t=setTimeout(()=>{cleanup();reject(new Error('timeout'));},timeout);
+    function cleanup(){delete window[cb];el.remove();clearTimeout(t);}
+    window[cb]=(d)=>{cleanup();resolve(d);};
+    el.onerror=()=>{cleanup();reject(new Error('script_error'));};
+    el.src=url+(url.includes('?')?'&':'?')+'callback='+cb+'&_='+Date.now();
+    document.head.appendChild(el);
+  });
 }
 
-// Parser CSV robusto (lida com aspas e vírgulas dentro de campos)
+// Método 2: CSV via export do Google Sheets (precisa de "Compartilhar → Qualquer pessoa pode ver")
+async function fetchSheetCSV(sheetName){
+  // Usa o endpoint /export que retorna CORS headers quando a planilha é pública
+  const url=`https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}/export?format=csv&sheet=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+  const res=await fetch(url,{cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return parseCSV(await res.text());
+}
+
+// Parser CSV robusto
 function parseCSV(text){
   const rows=[];
-  const lines=text.split(/\r?\n/);
-  for(const line of lines){
+  for(const line of text.split(/\r?\n/)){
     if(!line.trim()) continue;
     const row=[];let cur='';let inQ=false;
     for(let i=0;i<line.length;i++){
       const c=line[i];
-      if(c==='"'){
-        if(inQ&&line[i+1]==='"'){cur+='"';i++;}
-        else inQ=!inQ;
-      } else if(c===','&&!inQ){row.push(cur);cur='';}
+      if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
+      else if(c===','&&!inQ){row.push(cur.trim());cur='';}
       else cur+=c;
     }
-    row.push(cur);
+    row.push(cur.trim());
     rows.push(row);
   }
-  return rows; // primeira linha = cabeçalhos
+  return rows;
 }
 
-// Converte dd/mm/yyyy → yyyy-mm-dd
+// Converte dd/mm/yyyy ou yyyy-mm-dd → yyyy-mm-dd
 function toISO(v){
   if(!v) return '';
   const s=v.toString().trim();
@@ -929,126 +940,117 @@ function toISO(v){
   return s;
 }
 
-async function loadFromSheets(){
-  if(!CFG.SHEET_ID) return false;
-  try{
-    // Lê as abas em paralelo
-    const[ptRows,acRows,finRows,reRows]=await Promise.all([
-      gvizCSV('Pontos').catch(()=>[]),
-      gvizCSV('Acoes').catch(()=>[]),
-      gvizCSV('SpikesFinalizados').catch(()=>[]),
-      gvizCSV('SpikesReabertos').catch(()=>[]),
-    ]);
+// Mescla dados do Sheets no localStorage (remote preenche, local prevalece por ID)
+function mergeRemoteData(spikesArr,ptMap,acMap){
+  const localMap={};getSpikes().forEach(s=>localMap[s.date]=s);
+  spikesArr.forEach(s=>{if(!localMap[s.date])localMap[s.date]=s;});
+  saveSpikes(Object.values(localMap).sort((a,b)=>b.date.localeCompare(a.date)));
+  Object.keys(ptMap).forEach(spike=>{
+    const m={};getPts(spike).forEach(p=>m[p.id]=p);
+    ptMap[spike].forEach(p=>{if(!m[p.id])m[p.id]=p;});
+    savePts(spike,Object.values(m));
+  });
+  Object.keys(acMap).forEach(spike=>{
+    const m={};getActs(spike).forEach(a=>m[a.id]=a);
+    acMap[spike].forEach(a=>{if(!m[a.id])m[a.id]=a;});
+    saveActs(spike,Object.values(m));
+  });
+}
 
-    const spikes={};
-    const points={};
-    const actions={};
-
-    // SpikesFinalizados: Timestamp,Email,DataBR,DataISO
-    for(let i=1;i<finRows.length;i++){
-      const r=finRows[i];
-      const iso=r[3]?toISO(r[3]):toISO(r[2]);
-      if(iso) spikes[iso]={date:iso,status:'finalized',finalizedAt:r[0]||''};
-    }
-    // SpikesReabertos: sobrescreve
-    for(let i=1;i<reRows.length;i++){
-      const r=reRows[i];
-      const iso=r[3]?toISO(r[3]):toISO(r[2]);
-      if(iso&&spikes[iso]) spikes[iso].status='open';
-    }
-    // Pontos: Timestamp,Email,DataBR,ID,OQue,Turno,Area,Tipo,Impacto,Desc,Obs,DataISO
-    for(let i=1;i<ptRows.length;i++){
-      const r=ptRows[i];
-      const iso=r[11]?toISO(r[11]):toISO(r[2]);
-      const id=r[3]?r[3].trim():'';
-      if(!iso||!id) continue;
-      if(!spikes[iso]) spikes[iso]={date:iso,status:'open'};
-      if(!points[iso]) points[iso]=[];
-      if(!points[iso].find(p=>p.id===id)){
-        points[iso].push({id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',
-          area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
-      }
-    }
-    // Acoes: Timestamp,Email,DataBR,IDacao,IDponto,Acao,Resp,Prazo,Prio,Status,DataISO
-    for(let i=1;i<acRows.length;i++){
-      const r=acRows[i];
-      const iso=r[10]?toISO(r[10]):toISO(r[2]);
-      const id=r[3]?r[3].trim():'';
-      if(!iso||!id) continue;
-      if(!actions[iso]) actions[iso]=[];
-      const idx=actions[iso].findIndex(a=>a.id===id);
-      const obj={id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',
-        prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
-      if(idx>=0) actions[iso][idx]=obj; else actions[iso].push(obj);
-    }
-
-    // Merge com local (local prevalece)
-    const localMap={};
-    getSpikes().forEach(s=>localMap[s.date]=s);
-    Object.values(spikes).forEach(s=>{ if(!localMap[s.date]) localMap[s.date]=s; });
-    saveSpikes(Object.values(localMap).sort((a,b)=>b.date.localeCompare(a.date)));
-
-    Object.keys(points).forEach(spike=>{
-      const localById={};getPts(spike).forEach(p=>localById[p.id]=p);
-      points[spike].forEach(p=>{ if(!localById[p.id]) localById[p.id]=p; });
-      savePts(spike,Object.values(localById));
-    });
-    Object.keys(actions).forEach(spike=>{
-      const localById={};getActs(spike).forEach(a=>localById[a.id]=a);
-      actions[spike].forEach(a=>{ if(!localById[a.id]) localById[a.id]=a; });
-      saveActs(spike,Object.values(localById));
-    });
-
-    setSync('ok');
-    return true;
-  }catch(e){
-    console.warn('[THEMIS] loadFromSheets:',e.message);
-    return false;
+// Constrói os mapas a partir de linhas CSV (mesmo formato dos dois métodos)
+function buildMaps(ptRows,acRows,finRows,reRows){
+  const spikes={},ptMap={},acMap={};
+  for(let i=1;i<finRows.length;i++){const r=finRows[i];const iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso)spikes[iso]={date:iso,status:'finalized'};}
+  for(let i=1;i<reRows.length;i++){const r=reRows[i];const iso=r[3]?toISO(r[3]):toISO(r[2]);if(iso&&spikes[iso])spikes[iso].status='open';}
+  for(let i=1;i<ptRows.length;i++){
+    const r=ptRows[i];const iso=r[11]?toISO(r[11]):toISO(r[2]);const id=r[3]?r[3].trim():'';
+    if(!iso||!id)continue;
+    if(!spikes[iso])spikes[iso]={date:iso,status:'open'};
+    if(!ptMap[iso])ptMap[iso]=[];
+    if(!ptMap[iso].find(p=>p.id===id)) ptMap[iso].push({id,email:r[1]||'',oque:r[4]||'',turno:r[5]||'',area:r[6]||'',tipo:r[7]||'',impacto:r[8]||'',descricao:r[9]||'',observacoes:r[10]||''});
   }
+  for(let i=1;i<acRows.length;i++){
+    const r=acRows[i];const iso=r[10]?toISO(r[10]):toISO(r[2]);const id=r[3]?r[3].trim():'';
+    if(!iso||!id)continue;
+    if(!acMap[iso])acMap[iso]=[];
+    const idx=acMap[iso].findIndex(a=>a.id===id);
+    const obj={id,pointId:r[4]||'',acao:r[5]||'',responsavel:r[6]||'',prazo:r[7]||'',prioridade:r[8]||'',status:r[9]||'Aberto'};
+    if(idx>=0)acMap[iso][idx]=obj;else acMap[iso].push(obj);
+  }
+  return {spikes:Object.values(spikes),ptMap,acMap};
+}
+
+async function loadFromSheets(){
+  // ── Método 1: JSONP via Apps Script v3.1 ──────────────────────────
+  if(CFG.SHEETS_URL){
+    try{
+      const data=await jsonpFetch(CFG.SHEETS_URL+'?action=getAllData',8000);
+      if(data&&data.ok&&data.spikes&&data.spikes.length>0){
+        // Apps Script retornou dados estruturados
+        const ptMap=data.points||{};const acMap=data.actions||{};
+        mergeRemoteData(data.spikes,ptMap,acMap);
+        setSync('ok');
+        return 'script';
+      }
+    }catch(e){
+      console.info('[THEMIS] Método 1 (JSONP) indisponível:',e.message);
+    }
+  }
+
+  // ── Método 2: CSV via export do Google Sheets ──────────────────────
+  if(CFG.SHEET_ID){
+    try{
+      const[ptRows,acRows,finRows,reRows]=await Promise.all([
+        fetchSheetCSV('Pontos'),fetchSheetCSV('Acoes'),
+        fetchSheetCSV('SpikesFinalizados').catch(()=>[]),
+        fetchSheetCSV('SpikesReabertos').catch(()=>[]),
+      ]);
+      if(ptRows.length>1||acRows.length>1){
+        const{spikes,ptMap,acMap}=buildMaps(ptRows,acRows,finRows,reRows);
+        mergeRemoteData(spikes,ptMap,acMap);
+        setSync('ok');
+        return 'csv';
+      }
+    }catch(e){
+      console.info('[THEMIS] Método 2 (CSV) indisponível:',e.message);
+    }
+  }
+
+  return false; // ambos falharam
 }
 
 function renderHistory(){
   document.getElementById('c-history').innerHTML=`
     <div class="ph-row">
-      <div class="ph" style="margin:0"><h1>🕑 Histórico de Spike Days</h1><p>Sincronizando com Google Sheets...</p></div>
+      <div class="ph" style="margin:0"><h1>🕑 Histórico de Spike Days</h1><p>Buscando dados de todos os usuários...</p></div>
     </div>
     <div style="text-align:center;padding:60px;color:var(--txt2)">
       <div class="spin" style="margin:0 auto 14px;border-top-color:var(--or)"></div>
-      <p>Carregando dados de todos os usuários...</p>
+      <p style="font-size:13px">Carregando do Google Sheets...</p>
     </div>`;
-  loadFromSheets().then(ok=>_renderHistContent(ok));
+  loadFromSheets().then(method=>_renderHistContent(method));
 }
 
-function _renderHistContent(fromSheets){
+function _renderHistContent(method){
   const spikes=getSpikes();
+  const ml=method==='script'?'<span style="color:var(--gn);font-size:11px;margin-left:8px">● Apps Script ✓</span>':method==='csv'?'<span style="color:var(--gn);font-size:11px;margin-left:8px">● CSV Export ✓</span>':'<span style="color:var(--am);font-size:11px;margin-left:8px">● Somente dados locais</span>';
+  const guide=method?'':`<div style="background:var(--bg2);border:1px solid rgba(245,166,35,.3);border-radius:var(--r-lg);padding:20px;margin-bottom:20px"><div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:14px">⚠️ Dados locais apenas — faça uma das opções abaixo para ver dados de todos os usuários:</div><div class="g2" style="gap:16px"><div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px"><div style="font-size:12px;font-weight:700;color:var(--or2);margin-bottom:8px">⚡ OPÇÃO A — 1 passo (mais rápida)</div><div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Abra a <a href="https://docs.google.com/spreadsheets/d/${CFG.SHEET_ID}" target="_blank" style="color:var(--bl)">planilha</a><br>2. <b style="color:var(--txt)">Arquivo → Compartilhar → Compartilhar com outras pessoas</b><br>3. Em "Acesso geral" → <b style="color:var(--txt)">Qualquer pessoa com o link</b> → Visualizador<br>4. Clique em Concluído<br>5. Clique em 🔄 Atualizar</div></div><div style="background:var(--bg1);border:1px solid var(--bdr);border-radius:var(--r);padding:16px"><div style="font-size:12px;font-weight:700;color:var(--bl);margin-bottom:8px">⚙️ OPÇÃO B — Via Apps Script</div><div style="font-size:12px;color:var(--txt2);line-height:1.9">1. Na planilha: <b style="color:var(--txt)">Extensões → Apps Script</b><br>2. Substitua o código pelo <b style="color:var(--txt)">themis-appscript.gs v3.1</b><br>3. <b style="color:var(--txt)">Implantar → Gerenciar → ✏️ → Nova versão</b><br>4. Acesso: <b style="color:var(--txt)">✅ "Qualquer pessoa"</b> → Implantar<br>5. Clique em 🔄 Atualizar</div></div></div></div>`;
   document.getElementById('c-history').innerHTML=`
     <div class="ph-row">
-      <div class="ph" style="margin:0">
-        <h1>🕑 Histórico de Spike Days</h1>
-        <p>${spikes.length} spike day${spikes.length!==1?'s':''} registrado${spikes.length!==1?'s':''}
-        ${fromSheets?`<span style="color:var(--gn);font-size:11px;margin-left:8px">● Sincronizado com Sheets</span>`:`<span style="color:var(--am);font-size:11px;margin-left:8px">● Somente dados locais</span>`}
-        </p>
-      </div>
+      <div class="ph" style="margin:0"><h1>🕑 Histórico de Spike Days</h1><p>${spikes.length} spike day${spikes.length!==1?'s':''} encontrado${spikes.length!==1?'s':''} ${ml}</p></div>
       <button class="btn btn-secondary btn-sm np" onclick="S.histSel=null;renderHistory()">🔄 Atualizar</button>
     </div>
+    ${guide}
     <div class="hlayout">
       <div class="hside"><div class="card" style="padding:0;overflow:hidden">
         <div style="padding:10px 15px;border-bottom:1px solid var(--bdr);font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.6px">Spike Days (${spikes.length})</div>
-        ${spikes.length===0
-          ?`<div style="padding:28px;text-align:center;color:var(--txt2);font-size:13px">Nenhum spike encontrado</div>`
-          :[...spikes].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{
-              const sp=getPts(s.date),sa=getActs(s.date);
-              return `<div class="hitem${S.histSel===s.date?' on':''}" onclick="selHist('${s.date}')">
-                <div><div class="hd">⚡ ${fmtD(s.date)}</div><div class="hm">${sp.length} pontos · ${sa.length} ações</div></div>
-                ${s.status==='finalized'?bdg('✓','bdg-g'):bdg('Aberto','bdg-sh')}
-              </div>`;
-            }).join('')}
+        ${spikes.length===0?`<div style="padding:28px;text-align:center;color:var(--txt2);font-size:13px">Nenhum spike encontrado</div>`:[...spikes].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{const sp=getPts(s.date),sa=getActs(s.date);return `<div class="hitem${S.histSel===s.date?' on':''}" onclick="selHist('${s.date}')"><div><div class="hd">⚡ ${fmtD(s.date)}</div><div class="hm">${sp.length} pontos · ${sa.length} ações</div></div>${s.status==='finalized'?bdg('✓','bdg-g'):bdg('Aberto','bdg-sh')}</div>`;}).join('')}
       </div></div>
       <div id="h-detail"><div class="card empty"><span class="ei" style="font-size:36px">👈</span><p>Selecione um Spike Day para ver os detalhes</p></div></div>
     </div>`;
   if(S.histSel)renderHistDetail(S.histSel);
 }
-function selHist(d){S.histSel=d;_renderHistContent(true);}
+function selHist(d){S.histSel=d;_renderHistContent('local');}
 
 function reopenFromHistory(date){
   if(!confirm('Reabrir este Spike Day? O status voltará para "Aberto".'))return;
