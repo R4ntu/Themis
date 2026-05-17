@@ -475,7 +475,7 @@ async function flushQueue(){
 }
 
 async function checkSheetsHealth(){
-  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='SUA_URL_AQUI')return;
+  if(!CFG.SHEETS_URL||CFG.SHEETS_URL==='https://script.google.com/macros/s/AKfycbwI-hxBBh94bMKQJ6TGZ63I_uQctTRrjrrSfYDo-HDIvgAaJt4GvjiyoaPInq9qrLLZtw/exec')return;
   try{
     const data=await jsonpFetch(CFG.SHEETS_URL,5000);
     if(data&&data.ok) setSync('ok');
